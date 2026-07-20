@@ -1,0 +1,63 @@
+# ── Byte-compiled / cache ────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ── Virtual environments ─────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ── Packaging / build ────────────────────────────────────────────────
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+share/python-wheels/
+
+# ── Testing / coverage ───────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+*.cover
+
+# ── Type checkers / linters ──────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+
+# ── SPICE simulation artifacts ───────────────────────────────────────
+simfolder/
+spiceSimulation*/
+*.raw
+*.net
+*.log
+
+# ── Generated plots / images ─────────────────────────────────────────
+examples/**/*.png
+examples/**/*.svg
+examples/**/*.pdf
+
+# ── Editors / OS ─────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# ── Jupyter ──────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Data files ───────────────────────────────────────────────────────
+*.csv
+*.json
+*.npz

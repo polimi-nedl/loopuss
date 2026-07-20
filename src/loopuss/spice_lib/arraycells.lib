@@ -1,0 +1,178 @@
+***************************************
+* Array cell definition
+***************************************
+* ArrayCell: a subcircuit to model a non-ideal array cell with parasitic
+* resistive and capacitive elements.
+* The ideal 2-port cell is expanded into a 4-port cell with BE right (BER),
+* BE left (BEL), TE up (TEU) and TE down (TED).
+* 4 different models are available: _r (ideal purely resistive cell), _rc
+* (resistive + capacitive cell), _rprc (resistive cell with
+* parasitic row and column resistances) and _rcprc (resistive + capacitive
+* with parasitic row and column resistances). Where absent, parasitic
+* resistances are replaced by 0V voltage sources since LTSpice does not
+* allow shortcircuiting at netlist level.
+
+******************************************************************************
+* NOISELESS CELLS
+******************************************************************************
+***************************************
+* [Standard] cells: open/R/C/RC, no line resistance, suitable for extended netlisting
+***************************************
+* ArrayCell_O: Open circuit
+.subckt arraycell_o BEL BER TED TEU
+VPRL BEL BE 0
+VPRR BE BER 0
+VPCU TEU TE 0
+VPCD TE TED 0
+.ends arraycell_o
+
+* ArrayCell_R: Resistance
+.subckt arraycell_r BEL BER TED TEU
+VPRL BEL BE 0
+VPRR BE BER 0
+RCELL TE BE {R} noiseless
+VPCU TEU TE 0
+VPCD TE TED 0
+.ends arraycell_r
+
+* ArrayCell_C: Capacitance
+.subckt arraycell_c BEL BER TED TEU
+VPRL BEL BE 0
+VPRR BE BER 0
+CCELL TE BE {C}
+VPCU TEU TE 0
+VPCD TE TED 0
+.ends arraycell_c
+
+* ArrayCell_RC: Resistance + Capacitance
+.subckt arraycell_rc BEL BER TED TEU
+VPRL BEL BE 0
+VPRR BE BER 0
+RCELL TE BE {R} noiseless
+CCELL TE BE {C}
+VPCU TEU TE 0
+VPCD TE TED 0
+.ends arraycell_rc
+
+***************************************
+* [Parasitic] cells: open/R/C/RC, line resistance, suitable for extended netlisting
+***************************************
+* ArrayCell_OPRC: Open circuit + Parasitic R on row & column
+.subckt arraycell_oprc BEL BER TED TEU
+RPRL BEL BE {RPR/2} noiseless
+RPRR BE BER {RPR/2} noiseless
+RPCU TEU TE {RPC/2} noiseless
+RPCD TE TED {RPC/2} noiseless
+.ends arraycell_oprc
+
+* ArrayCell_RPRC: Resistance + Parasitic R on row & column
+.subckt arraycell_rprc BEL BER TED TEU
+RPRL BEL BE {RPR/2} noiseless
+RPRR BE BER {RPR/2} noiseless
+RCELL TE BE {R} noiseless
+RPCU TEU TE {RPC/2} noiseless
+RPCD TE TED {RPC/2} noiseless
+.ends arraycell_rprc
+
+* ArrayCell_CPRC: Capacitance + Parasitic R on row & column
+.subckt arraycell_cprc BEL BER TED TEU
+RPRL BEL BE {RPR/2} noiseless
+RPRR BE BER {RPR/2} noiseless
+CCELL TE BE {C}
+RPCU TEU TE {RPC/2} noiseless
+RPCD TE TED {RPC/2} noiseless
+.ends arraycell_rprc
+
+* ArrayCell_RCPRC: Resistance + Capacitance + Parastic R on row & column
+.subckt arraycell_rcprc BEL BER TED TEU
+RPRL BEL BE {RPR/2} noiseless
+RPRR BE BER {RPR/2} noiseless
+RCELL TE BE {R} noiseless
+CCELL TE BE {C}
+RPCU TEU TE {RPC/2} noiseless
+RPCD TE TED {RPC/2} noiseless
+.ends arraycell_rcprc
+
+
+
+
+******************************************************************************
+* NOISY CELLS
+******************************************************************************
+***************************************
+* [Standard] cells: open/R/C/RC, no line resistance, suitable for extended netlisting
+***************************************
+* ArrayCell_O: Open circuit
+.subckt arraycell_o_noisy BEL BER TED TEU
+VPRL BEL BE 0
+VPRR BE BER 0
+VPCU TEU TE 0
+VPCD TE TED 0
+.ends arraycell_o_noisy
+
+* ArrayCell_R: Resistance
+.subckt arraycell_r_noisy BEL BER TED TEU
+VPRL BEL BE 0
+VPRR BE BER 0
+RCELL TE BE {R}
+VPCU TEU TE 0
+VPCD TE TED 0
+.ends arraycell_r_noisy
+
+* ArrayCell_C: Capacitance
+.subckt arraycell_c_noisy BEL BER TED TEU
+VPRL BEL BE 0
+VPRR BE BER 0
+CCELL TE BE {C}
+VPCU TEU TE 0
+VPCD TE TED 0
+.ends arraycell_c_noisy
+
+* ArrayCell_RC: Resistance + Capacitance
+.subckt arraycell_rc_noisy BEL BER TED TEU
+VPRL BEL BE 0
+VPRR BE BER 0
+RCELL TE BE {R}
+CCELL TE BE {C}
+VPCU TEU TE 0
+VPCD TE TED 0
+.ends arraycell_rc_noisy
+
+***************************************
+* [Parasitic] cells: open/R/C/RC, line resistance, suitable for extended netlisting
+***************************************
+* ArrayCell_OPRC: Open circuit + Parasitic R on row & column
+.subckt arraycell_oprc_noisy BEL BER TED TEU
+RPRL BEL BE {RPR/2}
+RPRR BE BER {RPR/2}
+RPCU TEU TE {RPC/2}
+RPCD TE TED {RPC/2}
+.ends arraycell_oprc_noisy
+
+* ArrayCell_RPRC: Resistance + Parasitic R on row & column
+.subckt arraycell_rprc_noisy BEL BER TED TEU
+RPRL BEL BE {RPR/2}
+RPRR BE BER {RPR/2}
+RCELL TE BE {R}
+RPCU TEU TE {RPC/2}
+RPCD TE TED {RPC/2}
+.ends arraycell_rprc_noisy
+
+* ArrayCell_CPRC: Capacitance + Parasitic R on row & column
+.subckt arraycell_cprc_noisy BEL BER TED TEU
+RPRL BEL BE {RPR/2}
+RPRR BE BER {RPR/2}
+CCELL TE BE {C}
+RPCU TEU TE {RPC/2}
+RPCD TE TED {RPC/2}
+.ends arraycell_rprc_noisy
+
+* ArrayCell_RCPRC: Resistance + Capacitance + Parastic R on row & column
+.subckt arraycell_rcprc_noisy BEL BER TED TEU
+RPRL BEL BE {RPR/2}
+RPRR BE BER {RPR/2}
+RCELL TE BE {R}
+CCELL TE BE {C}
+RPCU TEU TE {RPC/2}
+RPCD TE TED {RPC/2}
+.ends arraycell_rcprc_noisy

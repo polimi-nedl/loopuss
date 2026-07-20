@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: >-
+  If you use loopus² in your research, please cite this software.
+  A reference publication will be added when available.
+
+title: "loopus²"
+type: software
+version: "1.0.0"
+date-released: 2026-07-19
+
+authors:
+  - family-names: "Mannocci"
+    given-names: "Piergiulio"
+    orcid: "https://orcid.org/0000-0002-0083-5804"
+  - family-names: "Montinaro"
+    given-names: "Eugenio"
+  - family-names: "Melacarne"
+    given-names: "Enrico"
+  - family-names: "Falcone"
+    given-names: "Giuseppe"
+  - family-names: "Pezzoli"
+    given-names: "Andrea"
+  - family-names: "Andreoli"
+    given-names: "Irene"
+  - family-names: "Zucchelli"
+    given-names: "Carlo"
+  - family-names: "Giannone"
+    given-names: "Elisabetta"
+  - family-names: "Ielmini"
+    given-names: "Daniele"
+    orcid: "https://orcid.org/0000-0002-1853-1614"
+
+repository-code: "https://github.com/polimi-nedl/loopuss"
+url: "https://github.com/polimi-nedl/loopuss"
+license: "AGPL-3.0-only"

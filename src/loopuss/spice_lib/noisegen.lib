@@ -1,0 +1,30 @@
+************************************************
+* NoiseGenerator Library
+************************************************
+* Model library for loopus2
+*
+* Copyright 2022 Politecnico di Milano
+*
+* Piergiulio Mannocci
+* (piergiulio.mannocci [at] polimi [dot] it)
+************************************************
+* Library Description
+************************************************
+* NoiseGen: a collection of subcircuits to model
+* noise generators. 
+************************************************
+
+* NoiseGen_V: Voltage Noise generator
+.subckt noisegen_v TA TB
+VN N1 TA 0
+RN N1 N2 60.32e18
+EN TB TA N2 TA {SV}
+.ends noisegen_v
+
+* NoiseGen_I: Current Noise generator
+.subckt noisegen_i TA TB
+VN N1 TA 0
+RN N1 N2 60.32e18
+GN TB TA N2 TA {SI}
+.ends noisegen_i
+

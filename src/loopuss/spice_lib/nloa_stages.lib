@@ -1,0 +1,136 @@
+* NLOA_Stages Library
+************************************************
+* Model library for loopuss
+*
+* Copyright 2022 Politecnico di Milano
+*
+* Piergiulio Mannocci
+* (piergiulio.mannocci [at] polimi [dot] it)
+*
+* Enrico Melacarne
+* (enrico.melacarne [at] mail [dot] polimi [dot] it)
+*
+* Giuseppe Falcone
+* (giuseppe.falcone [at] mail [dot] polimi [dot] it)
+************************************************
+* Library Description
+************************************************
+* This library contains the individual stages used to form NonLinearOA
+* models of the NonLinearOA library. 
+* Each NonLinearOA can be composed of: 
+* - a gain stage, modeling input resistance, offset, DC gain and main singularity
+* - a vlim stage, modeling output voltage saturation
+* - a freq stage, modeling additional poles and zeros
+* - an out stage, modeling output resistance and current limitations. 
+************************************************
+************************************************
+* Gain stages
+************************************************
+* Gain stages naming follow the convention: 
+* gainstage_x1_x2
+* where x1 = GM or 1P, with GM the purely-integrating 
+*						and 1P the single-pole gain stages.
+* where x2 = Y or O or R or C (or any combination of O, R, C)
+*						Y is the ideal stage (no offset, no input R/C)
+*						O adds offset voltage
+*						R adds input (differential) resistance
+*						C adds input (differential) capacitance
+*						V adds voltage limiting
+
+**** GainStage_GM_Y: Purely-integrating gain stage
+************************************************
+.subckt gainstage_gm_y INP INN OUT
+GA OUT 0 INP INN {2*PI*1p*GBWP}
+CA OUT 0 1p
+.ends gainstage_gm_y
+
+**** GainStage_1P_Y: 1-Pole Gain Stage
+************************************************
+.subckt gainstage_1p_y INP INN OUT
+GA OUT 0 INP INN {A0*2*PI*FP1*1p}
+RA OUT 0 {1/(2*PI*FP1*1p)} noiseless
+CA OUT 0 1p
+.ends gainstage_1p_y
+
+**** GainStage_GM_O: Purely-integrating gain stage with offset
+************************************************
+.subckt gainstage_gm_o INP INN OUT
+VOS VOS INP {VOS}
+X1 VOS INN OUT gainstage_gm_y params: GBWP={GBWP}
+.ends gainstage_gm_o
+
+**** GainStage_1P_O: 1-Pole Gain Stage with offset
+************************************************
+.subckt gainstage_1p_o INP INN OUT
+VOS VOS INP {VOS}
+X1 VOS INN OUT gainstage_1p_y params: A0={A0} FP1={FP1}
+.ends gainstage_1p_o
+
+************************************************
+* Input impedance stages
+************************************************
+.subckt inputstage_r INP INN
+RIN INP INN {RIN} noiseless
+.ends inputstage_r
+
+.subckt inputstage_c INP INN
+CIN INP INN {CIN}
+.ends inputstage_c
+
+.subckt inputstage_rc INP INN
+RIN INP INN {RIN} noiseless
+CIN INP INN {CIN}
+.ends inputstage_rc
+
+************************************************
+* Voltage-limiting stage
+************************************************
+.subckt vlimstage OUT VSS VDD
+D1 OUT VDD X
+D2 VSS OUT X
+.model X D(Ron=1n,Roff=1e24)
+.ends vlimstage
+
+************************************************
+* Frequency stages
+************************************************
+.subckt freqstage_1p IN OUT
+EA NX01 0 IN 0 1
+RA NX01 OUT {1/(2*PI*FP2*1p)} noiseless
+CA OUT 0 1p
+.ends freqstage_1p
+
+.subckt freqstage_1p1z IN OUT
+EA NX01 0 IN 0 1
+RA NX01 OUT {(FZ1-FP2)/(2*PI*1p*FP2*FZ1)} noiseless
+RB OUT NX02 {1/(2*PI*FZ1*1p)} noiseless
+CA NX02 0 1p
+.ends freqstage_1p1z
+
+************************************************
+* Output stages
+************************************************
+.subckt outstage_y IN OUT
+EA OUT 0 IN 0 1
+.ends outstage_y
+
+.subckt outstage_r IN OUT
+EA NX01 0 IN 0 1
+ROUT NX01 OUT {ROUT} noiseless
+.ends outstage_r
+
+.subckt outstage_i IN OUT
+EA NX01 0 IN 0 1
+D1 NX01 OUT LDD 
+D2 OUT NX01 LSS 
+.model LDD D(Ron=1m,Roff=1e24,Ilimit={IDD})
+.model LSS D(Ron=1m,Roff=1e24,Ilimit={ISS})
+.ends outstage_i
+
+.subckt outstage_ir IN OUT
+EA NX01 0 IN 0 1
+D1 NX01 OUT LDD 
+D2 OUT NX01 LSS 
+.model LDD D(Ron={ROUT},Roff=1e24,Ilimit={IDD})
+.model LSS D(Ron={ROUT},Roff=1e24,Ilimit={ISS})
+.ends outstage_ir

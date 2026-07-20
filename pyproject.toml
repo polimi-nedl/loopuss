@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loopuss"
+version = "1.0.0"
+description = "loopuss: a simulation framework for open- and closed-loop in-memory computing circuits"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov",
+    "ruff>=0.6",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["loopuss*"]
+
+# spice_lib/ holds the LTSpice subcircuit library. It is data, not a package, so
+# packages.find does not pick it up; every generated netlist .lib-includes these
+# files by absolute path, so omitting them ships a broken SPICE backend.
+[tool.setuptools.package-data]
+loopuss = ["spice_lib/*.lib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# E741: `l` names the eigenvalue vector in the solver and matches the "l" key it
+# is read from in _eigen_decomp. Renaming would obscure that correspondence.
+ignore = ["E741"]

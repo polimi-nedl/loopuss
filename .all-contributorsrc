@@ -1,0 +1,98 @@
+{
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": false,
+  "contributors": [
+    {
+      "login": "jackphen",
+      "name": "Piergiulio Mannocci",
+      "avatar_url": "https://avatars.githubusercontent.com/u/22836767?v=4",
+      "profile": "https://github.com/jackphen",
+      "contributions": [
+        "code",
+        "bug",
+        "doc",
+        "userTesting",
+        "tutorial"
+      ]
+    },
+    {
+      "login": "eumonti",
+      "name": "Eugenio Montinaro",
+      "avatar_url": "https://avatars.githubusercontent.com/u/62185102?v=4",
+      "profile": "https://github.com/eumonti",
+      "contributions": [
+        "code",
+        "test"
+      ]
+    },
+    {
+      "login": "OldHenry96",
+      "name": "Enrico Melacarne",
+      "avatar_url": "https://avatars.githubusercontent.com/u/61509046?v=4",
+      "profile": "https://github.com/OldHenry96",
+      "contributions": [
+        "code",
+        "bug"
+      ]
+    },
+    {
+      "login": "Giuseppe-Falcone",
+      "name": "Giuseppe Falcone",
+      "avatar_url": "https://avatars.githubusercontent.com/u/101051093?v=4",
+      "profile": "https://github.com/Giuseppe-Falcone",
+      "contributions": [
+        "test"
+      ]
+    },
+    {
+      "login": "andreapezzoli",
+      "name": "Andrea Pezzoli",
+      "avatar_url": "https://avatars.githubusercontent.com/u/100782614?v=4",
+      "profile": "https://github.com/andreapezzoli",
+      "contributions": [
+        "test"
+      ]
+    },
+    {
+      "login": "irene-andreoli",
+      "name": "Irene Andreoli",
+      "avatar_url": "https://avatars.githubusercontent.com/u/161730429?v=4",
+      "profile": "https://github.com/irene-andreoli",
+      "contributions": [
+        "code",
+        "test"
+      ]
+    },
+    {
+      "login": "Carlo-Zucchelli",
+      "name": "Carlo Zucchelli",
+      "avatar_url": "https://avatars.githubusercontent.com/u/159053517?v=4",
+      "profile": "https://github.com/Carlo-Zucchelli",
+      "contributions": [
+        "code",
+        "test"
+      ]
+    },
+    {
+      "login": "ElisabettaGiannone",
+      "name": "Elisabetta Giannone",
+      "avatar_url": "https://avatars.githubusercontent.com/u/73816646?v=4",
+      "profile": "https://github.com/ElisabettaGiannone",
+      "contributions": [
+        "code",
+        "bug"
+      ]
+    }
+  ],
+  "contributorsPerLine": 6,
+  "projectName": "loopuss",
+  "projectOwner": "polimi-nedl",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "skipCi": true,
+  "commitType": "docs",
+  "commitConvention": "angular"
+}

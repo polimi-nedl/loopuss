@@ -1,0 +1,11 @@
+# Revisions to skip when running `git blame`.
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub honours this file automatically.)
+
+# Apply repo-wide ruff format — mechanical reformat of all 78 Python files,
+# no behavioural change.
+74175df13f189b99cf33d3479d2b90b31e1a48a0
+
+# Run ruff formatter
+4cb4514a8cfc9b1ffe31913c13719d656f827456
