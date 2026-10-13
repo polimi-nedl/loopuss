@@ -12,6 +12,16 @@ def natsortpoles(p: np.ndarray) -> np.ndarray:
     ascending order; complex-conjugate singularities are gathered in the
     middle, with the magnitude of the imaginary part growing towards the
     centre so that pole splitting is highlighted.
+
+    Parameters
+    ----------
+    p : array_like
+        Poles or zeros, e.g. from :meth:`LoopUS.pz <loopuss.LoopUS.pz>`.
+
+    Returns
+    -------
+    ndarray
+        The same values, reordered.
     """
     p = np.asarray(p).ravel()
 

@@ -1,4 +1,7 @@
-"""Plot helpers: tranplot / corrplot / matplot / reimplot."""
+"""Plot helpers: tranplot / corrplot / matplot / reimplot / psdplot.
+
+Every function draws on ``ax`` (a new figure when omitted) and returns it.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +10,22 @@ import numpy as np
 
 
 def tranplot(time, V, ax=None, **kwargs):
-    """Plot transient voltages on a semilog-x axis."""
+    """Plot transient voltages on a semilog-x axis.
+
+    Parameters
+    ----------
+    time : array_like, shape (T,)
+        Time points [s].
+    V : array_like, shape (n, T)
+        One voltage trace per row [V].
+    ax : matplotlib.axes.Axes, optional
+    **kwargs
+        Passed to :meth:`matplotlib.axes.Axes.semilogx`.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
     if ax is None:
         _, ax = plt.subplots()
     V = np.atleast_2d(V)
@@ -20,7 +38,20 @@ def tranplot(time, V, ax=None, **kwargs):
 
 
 def corrplot(y_circ, y_ref, ax=None):
-    """Scatter circuit output vs reference, with y=x diagonal."""
+    """Scatter the circuit output against a reference, with the ``y = x`` line.
+
+    Parameters
+    ----------
+    y_circ : array_like
+        Circuit output, plotted on the y axis.
+    y_ref : array_like
+        Reference solution, plotted on the x axis.
+    ax : matplotlib.axes.Axes, optional
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
     if ax is None:
         _, ax = plt.subplots()
     y_circ = np.asarray(y_circ).ravel()
@@ -38,7 +69,22 @@ def corrplot(y_circ, y_ref, ax=None):
 
 
 def matplot(M, ax=None, c_label="", cmap="viridis"):
-    """Heatmap of a matrix with a colorbar."""
+    """Heatmap of a matrix with a colorbar.
+
+    Parameters
+    ----------
+    M : array_like, shape (rows, cols)
+        Matrix, e.g. ``CrossBar.G``.
+    ax : matplotlib.axes.Axes, optional
+    c_label : str, optional
+        Colorbar label.
+    cmap : str, optional
+        Matplotlib colormap name. Default ``"viridis"``.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
     if ax is None:
         _, ax = plt.subplots()
     im = ax.imshow(np.asarray(M), aspect="auto", cmap=cmap, interpolation="nearest")
@@ -51,7 +97,18 @@ def matplot(M, ax=None, c_label="", cmap="viridis"):
 
 
 def reimplot(poles, ax=None):
-    """Plot complex poles on the s-plane."""
+    """Plot complex poles on the s-plane; infinite poles are skipped.
+
+    Parameters
+    ----------
+    poles : array_like
+        Poles, e.g. from :meth:`LoopUS.pz <loopuss.LoopUS.pz>`.
+    ax : matplotlib.axes.Axes, optional
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
     if ax is None:
         _, ax = plt.subplots()
     poles = np.asarray(poles).ravel()
@@ -75,6 +132,23 @@ def psdplot(freq, Sout, ax=None, color_order=None, cmap="Spectral", **kwargs):
     figure, the way the noise_analysis example layers MemoryOnly/OAOnly/etc.
 
     Each line is labelled ``V_{out,i}`` so the caller can ``ax.legend()``.
+
+    Parameters
+    ----------
+    freq : array_like, shape (F,)
+        Frequencies [Hz].
+    Sout : array_like, shape (n, F)
+        Noise densities [V/√Hz], e.g. from :meth:`LoopUS.noise
+        <loopuss.LoopUS.noise>`.
+    ax : matplotlib.axes.Axes, optional
+    color_order : array_like, optional
+    cmap : str, optional
+    **kwargs
+        Passed to :meth:`matplotlib.axes.Axes.loglog`.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
     """
     if ax is None:
         _, ax = plt.subplots()

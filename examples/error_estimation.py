@@ -27,7 +27,7 @@ def main():
 
     Gin = CrossBar(np.empty((N, 0)))
     Gf = CrossBar(A * G0)
-    circ = LoopUS(Gin, Gf, verbose=True)
+    circ = LoopUS(Gin, Gf)
 
     # Worst-case input vector, applied as the circuit input.
     maxerr, y, _, _ = circ.errbound()

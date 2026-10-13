@@ -15,8 +15,6 @@ _I_ALIASES = {"i1": "val1", "i2": "val2", "iamp": "ampsine", "ioff": "offsine", 
 
 _KNOWN_ATTRS = {
     "dcvalue",
-    "acamplitude",
-    "acphase",
     "tr",
     "tf",
     "ton",
@@ -36,7 +34,39 @@ _KNOWN_ATTRS = {
 
 
 class Signal(ABC):
-    """Abstract base for voltage and current waveforms."""
+    """Abstract base for voltage and current waveforms.
+
+    Waveforms use the LTspice source vocabulary. :meth:`to_array` samples one
+    for the analytical solvers, and :meth:`to_spice` emits it as a SPICE source
+    line. Instantiate :class:`~loopuss.VoltageSignal` or
+    :class:`~loopuss.CurrentSignal`.
+
+    Parameters
+    ----------
+    s_type : {"EMPTY", "DC", "STEP", "PULSE", "SINE", "PWL"}, optional
+        Source type, case-insensitive. Default ``"EMPTY"``: no source. It
+        samples as 0 for currents and as ``NaN`` (floating) for voltages, and
+        is left out of netlists.
+    **kwargs
+        Waveform parameters, case-insensitive; unknown names are ignored.
+
+        * ``dcvalue``: value of DC sources.
+        * ``td``: delay [s] of STEP, PULSE, SINE and PWL sources; a PWL
+          source has its knot times shifted by it.
+        * ``val1``, ``val2``: initial and final value of STEP and PULSE
+          sources, also accepted as ``v1``/``v2`` or ``i1``/``i2``.
+        * ``ton``: on-time [s] of PULSE sources.
+        * ``tr``, ``tf``, ``tperiod``, ``ncycles``: rise time, fall time,
+          period and cycle count of PULSE sources. They are used only in
+          netlists; the model samples a single ideal pulse.
+        * ``ampsine``, ``offsine`` (also ``vamp``/``voff`` or
+          ``iamp``/``ioff``), ``freq`` [Hz], ``theta`` [1/s], ``phi`` [°]:
+          amplitude, offset, frequency, damping and phase of SINE sources; the
+          amplitude and frequency are required. ``ncycles`` stops a SINE after
+          that many periods, holding its last value (unset or 0: endless).
+        * ``time``, ``valpwl`` (also ``vval`` or ``ival``): knot times [s] and
+          values of PWL sources.
+    """
 
     e_type: str  # 'V' or 'I'
 
@@ -47,8 +77,6 @@ class Signal(ABC):
         self.s_type: str = s_type
 
         self.dcvalue: float | None = None
-        self.acamplitude: float | None = None
-        self.acphase: float | None = None
         self.tr: float | None = None
         self.tf: float | None = None
         self.ton: float | None = None
@@ -75,34 +103,63 @@ class Signal(ABC):
             else:
                 setattr(self, attr, float(v))
 
+        # No default would serve both backends: an unset field is written to
+        # the netlist as 0, which for these two gives a flat source.
+        if self.is_sine() and (self.ampsine is None or self.freq is None):
+            raise ValueError("SINE signals need an amplitude and a frequency.")
+
     # --- queries ---
     def is_voltage(self) -> bool:
+        """True for voltage signals."""
         return self.e_type == "V"
 
     def is_current(self) -> bool:
+        """True for current signals."""
         return self.e_type == "I"
 
     def is_dc(self) -> bool:
+        """True for DC sources."""
         return self.s_type == "DC"
 
     def is_step(self) -> bool:
+        """True for STEP sources."""
         return self.s_type == "STEP"
 
     def is_pulse(self) -> bool:
+        """True for PULSE sources."""
         return self.s_type == "PULSE"
 
     def is_sine(self) -> bool:
+        """True for SINE sources."""
         return self.s_type == "SINE"
 
     def is_pwl(self) -> bool:
+        """True for PWL sources."""
         return self.s_type == "PWL"
 
     def is_empty(self) -> bool:
+        """True for EMPTY signals."""
         return self.s_type == "EMPTY"
 
     # --- waveform ---
     def to_array(self, t: np.ndarray) -> np.ndarray:
-        """Evaluate waveform on time vector t. Returns 1-D float64 array."""
+        """Sample the waveform.
+
+        Parameters
+        ----------
+        t : array_like
+            Time points [s].
+
+        Returns
+        -------
+        ndarray, shape (len(t),)
+            STEP: ``val1`` before ``td`` and ``val2`` from ``td`` on.
+            PULSE: ``val2`` on ``[td, td + ton]`` and ``val1`` elsewhere.
+            SINE: ``offsine + ampsine * sin(phi π/180)`` before ``td``, then
+            ``offsine + ampsine * exp(-theta (t - td)) * sin(2π freq (t - td) + phi π/180)``.
+            PWL: each knot value held until the next knot, the knots shifted
+            by ``td``, and the first value before the first knot.
+        """
         t = np.asarray(t, dtype=float).ravel()
         td = float(self.td) if self.td is not None else 0.0
 
@@ -124,7 +181,7 @@ class Signal(ABC):
             return np.where((t >= td) & (t <= td + ton), v2, v1)
 
         if self.is_pwl():
-            t_pts = np.asarray(self.time, dtype=float).ravel()
+            t_pts = np.asarray(self.time, dtype=float).ravel() + td
             v_pts = np.asarray(self.valpwl, dtype=float).ravel()
             # 'previous' interpolation with left-extrapolation using first value.
             idx = np.searchsorted(t_pts, t, side="right") - 1
@@ -132,30 +189,39 @@ class Signal(ABC):
             return v_pts[idx].astype(float)
 
         if self.is_sine():
-            amp = float(self.ampsine) if self.ampsine is not None else 1.0
+            amp = float(self.ampsine)
             off = float(self.offsine) if self.offsine is not None else 0.0
-            freq = float(self.freq) if self.freq is not None else 1.0
-            phi = float(self.phi) if self.phi is not None else 0.0
+            freq = float(self.freq)
+            # phi is in degrees, as in the SPICE SINE source the netlist emits.
+            phi = np.deg2rad(float(self.phi)) if self.phi is not None else 0.0
             damp = float(self.theta) if self.theta is not None else 0.0
-            out = np.full(len(t), off)
+            # Before td LTspice holds the value the sine starts from, not the offset.
+            out = np.full(len(t), off + amp * np.sin(phi))
             mask = t >= td
-            out[mask] = off + amp * np.exp(-damp * (t[mask] - td)) * np.sin(
-                2 * np.pi * freq * (t[mask] - td) + phi
-            )
+            # After ncycles periods LTspice holds the value the last one ends on.
+            u = t[mask] - td
+            if self.ncycles:
+                u = np.minimum(u, float(self.ncycles) / freq)
+            out[mask] = off + amp * np.exp(-damp * u) * np.sin(2 * np.pi * freq * u + phi)
             return out
 
         raise NotImplementedError(f"to_array not implemented for {self.s_type}")
 
     @property
     def stype(self) -> str:
+        """Source type, same as ``s_type``."""
         return self.s_type
 
     # --- SPICE ---
-    def to_spice(self, name: str, pos: str, neg: str) -> str:
+    def to_spice(self, name: str, pos: str, neg: str, *, dc_only: bool = False) -> str:
         """SPICE source line for this signal.
 
         Returns '' for EMPTY signals. ``name`` is the source id (the V/I prefix
         is prepended); ``pos``/``neg`` are the terminal node names.
+
+        STEP sources are written as a PULSE with 1 fs edges. With ``dc_only``,
+        every type is written as a DC source holding its value at t = 0, which
+        is how the model solver samples sources for an operating point.
         """
         if self.is_empty():
             return ""
@@ -164,13 +230,17 @@ class Signal(ABC):
         def f(x) -> str:
             return f"{(float(x) if x is not None else 0.0):.16g}"
 
+        # A "DC x PULSE(...)" override would not do for .op: when LTspice's
+        # direct Newton iteration fails and it falls back to pseudo-transient
+        # (gminsteps=0 and itl6=0 skip the other fallbacks), it evaluates the
+        # PULSE at t = 0 and ignores the override.
+        if dc_only:
+            return f"{head} DC({f(self.to_array(np.array([0.0]))[0])})"
         if self.is_dc():
             return f"{head} DC({f(self.dcvalue)})"
         if self.is_pulse():
-            # DC operating-point override so .op matches model.
-            dc = f"DC {f(self.to_array(np.array([0.0]))[0])} "
             return (
-                f"{head} {dc}PULSE({f(self.val1)}, {f(self.val2)}, {f(self.td)} "
+                f"{head} PULSE({f(self.val1)}, {f(self.val2)}, {f(self.td)} "
                 f"{f(self.tr)} {f(self.tf)} {f(self.ton)} "
                 f"{f(self.tperiod)} {f(self.ncycles)})"
             )
@@ -181,14 +251,12 @@ class Signal(ABC):
                 f"{f(self.phi)} {f(self.ncycles)})"
             )
         if self.is_step():
-            # DC operating-point override so .op matches model.
-            dc = f"DC {f(self.to_array(np.array([0.0]))[0])} "
             return (
-                f"{head} {dc}PULSE({f(self.val1)},{f(self.val2)}, {f(self.td)} "
-                f"1e-15 1e-15 1e3 1e3 1)"
+                f"{head} PULSE({f(self.val1)},{f(self.val2)}, {f(self.td)} 1e-15 1e-15 1e3 1e3 1)"
             )
         if self.is_pwl():
-            time = np.asarray(self.time, dtype=float).ravel()
+            # LTspice's PWL has no delay field, so the knots carry it.
+            time = np.asarray(self.time, dtype=float).ravel() + (self.td or 0.0)
             val = np.asarray(self.valpwl, dtype=float).ravel()
             pwl = np.empty(time.size + val.size)
             pwl[0::2] = time
@@ -198,15 +266,19 @@ class Signal(ABC):
 
     def breakpoints(self) -> np.ndarray:
         """Return critical time points (signal discontinuities)."""
-        if self.s_type in ("DC", "EMPTY", "SINE"):
+        if self.s_type in ("DC", "EMPTY"):
             return np.array([], dtype=float)
+        if self.s_type == "SINE":
+            if not self.ncycles:
+                return np.array([], dtype=float)
+            return np.array([float(self.td or 0.0) + float(self.ncycles) / float(self.freq)])
         pts: list[float] = []
         if self.td is not None:
             pts.append(float(self.td))
         if self.s_type == "PULSE" and self.ton is not None and self.td is not None:
             pts.append(float(self.td) + float(self.ton))
         if self.s_type == "PWL" and self.time is not None:
-            pts.extend(np.asarray(self.time).ravel().tolist())
+            pts.extend((np.asarray(self.time, dtype=float).ravel() + (self.td or 0.0)).tolist())
         return np.array(pts, dtype=float)
 
     def get_char_times(self) -> np.ndarray:
@@ -214,11 +286,13 @@ class Signal(ABC):
         return self.breakpoints()
 
     def add_delay(self, dt: float) -> Signal:
+        """Return a copy with ``td`` increased by ``dt`` [s]."""
         s = deepcopy(self)
         s.td = (s.td or 0.0) + float(dt)
         return s
 
     def max_value(self) -> float:
+        """Largest value the waveform reaches; 0 for EMPTY signals."""
         if self.is_dc():
             return float(self.dcvalue)
         if self.is_step() or self.is_pulse():
@@ -230,6 +304,7 @@ class Signal(ABC):
         return 0.0
 
     def min_value(self) -> float:
+        """Smallest value the waveform reaches; 0 for EMPTY signals."""
         if self.is_dc():
             return float(self.dcvalue)
         if self.is_step() or self.is_pulse():
@@ -245,7 +320,11 @@ class Signal(ABC):
 
 
 class VoltageSignal(Signal):
-    """Voltage waveform."""
+    """Voltage waveform; see :class:`~loopuss.Signal` for the parameters.
+
+    ``v1``, ``v2``, ``vamp``, ``voff`` and ``vval`` are read/write aliases of
+    ``val1``, ``val2``, ``ampsine``, ``offsine`` and ``valpwl``.
+    """
 
     e_type = "V"
 
@@ -291,6 +370,7 @@ class VoltageSignal(Signal):
         self.valpwl = np.asarray(v, dtype=float).ravel()
 
     def vtoy(self, V0: float = 1.0) -> float:
+        """Value at t = 0 divided by ``V0``."""
         return self.to_array(np.array([0.0]))[0] / V0
 
     @staticmethod
@@ -301,11 +381,28 @@ class VoltageSignal(Signal):
         ton: float | None = None,
         tv: np.ndarray | None = None,
     ) -> list[VoltageSignal]:
-        """Convert numeric vector y to list of VoltageSignal objects.
+        """Convert a numeric vector into one voltage source per channel.
 
-        For PWL sources ``y`` is a 2-D array whose rows are the per-channel
-        value sequences sampled at the shared time vector ``tv``; every other
-        source type takes a 1-D ``y`` with one scalar per channel.
+        Parameters
+        ----------
+        y : array_like
+            One value per channel. For PWL, a 2-D array with one row of
+            values per channel, sampled at ``tv``. ``NaN`` channels (all-``NaN``
+            rows for PWL) become EMPTY signals.
+        V0 : float, optional
+            Scale factor [V per unit of ``y``]. Default 1.
+        stype : {"STEP", "DC", "PULSE", "PWL"}, optional
+            Source type, case-insensitive. Default ``"STEP"``, from 0 to
+            ``y * V0`` at t = 0. PULSE is a single pulse from t = 0 lasting
+            ``ton``. Any other value gives EMPTY signals.
+        ton : float, optional
+            Pulse on-time [s]; required for PULSE.
+        tv : array_like, optional
+            Knot times [s] shared by all channels; required for PWL.
+
+        Returns
+        -------
+        list of VoltageSignal
         """
         stype = stype.upper()
         if stype == "PWL":
@@ -351,7 +448,11 @@ class VoltageSignal(Signal):
 
 
 class CurrentSignal(Signal):
-    """Current waveform."""
+    """Current waveform; see :class:`~loopuss.Signal` for the parameters.
+
+    ``i1``, ``i2``, ``iamp``, ``ioff`` and ``ival`` are read/write aliases of
+    ``val1``, ``val2``, ``ampsine``, ``offsine`` and ``valpwl``.
+    """
 
     e_type = "I"
 
@@ -396,6 +497,7 @@ class CurrentSignal(Signal):
         self.valpwl = np.asarray(v, dtype=float).ravel()
 
     def itoy(self, I0: float = 1.0) -> float:
+        """Value at t = 0 divided by ``I0``."""
         return self.to_array(np.array([0.0]))[0] / I0
 
     @staticmethod
@@ -406,11 +508,28 @@ class CurrentSignal(Signal):
         ton: float | None = None,
         tv: np.ndarray | None = None,
     ) -> list[CurrentSignal]:
-        """Convert numeric vector y to list of CurrentSignal objects.
+        """Convert a numeric vector into one current source per channel.
 
-        For PWL sources ``y`` is a 2-D array whose rows are the per-channel
-        value sequences sampled at the shared time vector ``tv``; every other
-        source type takes a 1-D ``y`` with one scalar per channel.
+        Parameters
+        ----------
+        y : array_like
+            One value per channel. For PWL, a 2-D array with one row of
+            values per channel, sampled at ``tv``. ``NaN`` channels (all-``NaN``
+            rows for PWL) become EMPTY signals.
+        I0 : float, optional
+            Scale factor [A per unit of ``y``]. Default 1.
+        stype : {"STEP", "DC", "PULSE", "PWL"}, optional
+            Source type, case-insensitive. Default ``"STEP"``, from 0 to
+            ``y * I0`` at t = 0. PULSE is a single pulse from t = 0 lasting
+            ``ton``. Any other value gives EMPTY signals.
+        ton : float, optional
+            Pulse on-time [s]; required for PULSE.
+        tv : array_like, optional
+            Knot times [s] shared by all channels; required for PWL.
+
+        Returns
+        -------
+        list of CurrentSignal
         """
         stype = stype.upper()
         if stype == "PWL":

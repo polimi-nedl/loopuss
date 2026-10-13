@@ -36,7 +36,7 @@ from .utils import GroupedDisplay
 _LIB_DIR = Path(__file__).resolve().parent / "spice_lib"
 
 #: Library files included into every netlist (order matters).
-LIB_FILES = ("arraycells.lib", "nloa_stages.lib", "nloa.lib", "niccells.lib", "noisegen.lib")
+LIB_FILES = ("arraycells.lib", "nloa_stages.lib", "nloa.lib", "noisegen.lib")
 
 # Per-solver-accuracy LTSpice .option footers. Membership in this dict also
 # defines which solver_type strings are SPICE modes (versus the fast ODE path).
@@ -68,7 +68,28 @@ _SPICE_FOOTERS = {
 class SpiceAnalysis(GroupedDisplay):
     """Description of a SPICE analysis.
 
-    ``type`` is one of ``'tran'``, ``'op'`` or ``'noise'``.
+    Parameters
+    ----------
+    type : {"tran", "op", "noise"}
+        Analysis type, case-insensitive.
+    Tstart, Tstop : float, optional
+        Transient start and stop time [s]. Default 0 and 1.
+    Tstep : float, optional
+        Transient initial timestep [s]. Default ``(Tstop - Tstart) / 100``.
+    dTmax : float, optional
+        Transient maximum timestep [s]. Default 1000.
+    Fmin, Fmax : float, optional
+        Noise sweep range [Hz]. Default 1 Hz and 10 GHz. If ``Fmax < Fmin``,
+        ``Fmax`` becomes ``10 * Fmin``.
+    Fstep : float, optional
+        Points per decade or octave of the noise sweep. Default 100.
+    Fsweep : {"dec", "oct", "lin"}, optional
+        Noise sweep type. Default ``"dec"``.
+
+    Raises
+    ------
+    ValueError
+        If ``type`` is not supported.
     """
 
     type: str
@@ -124,7 +145,8 @@ class SpiceAnalysis(GroupedDisplay):
         return [("", fields)]
 
     def to_spice(self, args=None) -> str:
-        """SPICE directive string."""
+        """SPICE directive, e.g. ``.tran``. For ``noise``, ``args`` is
+        ``(output_node, input_source)``."""
         t = self.type.lower()
         if t == "op":
             return ".op"
@@ -138,7 +160,11 @@ class SpiceAnalysis(GroupedDisplay):
         raise ValueError(self.type)
 
     def to_double(self) -> np.ndarray:
-        """Numeric sweep vector."""
+        """Sweep points for the model solver.
+
+        ``tran``: steps of ``min(Tstep, dTmax)``. ``op``: ``[0]``. ``noise``:
+        ``Fstep`` points per decade or octave, or 1 Hz spacing for ``lin``.
+        """
         t = self.type.lower()
         if t == "tran":
             step = min(self.Tstep, self.dTmax)
@@ -168,6 +194,7 @@ _DEFAULT_SPICE_LOCATIONS = (
     r"C:\Program Files\LTC\LTspiceXVII\XVIIx64.exe",
     r"C:\Program Files\LTC\LTspiceXVII\XVIIx86.exe",
     r"C:\Program Files (x86)\LTC\LTspiceXVII\XVIIx64.exe",
+    "/Applications/LTspice.app/Contents/MacOS/LTspice",
 )
 
 
@@ -175,8 +202,13 @@ def spice_path() -> str:
     """Path to the LTSpice executable.
 
     Resolution order: ``LOOPUSS_SPICE_PATH`` env var, then ``config.json`` in
-    the package directory (``{"spicePath": "..."}``), then known default install
-    locations, with env/auto-detect fallbacks.
+    the package directory (``{"spicePath": "..."}``), then known default
+    install locations on Windows and macOS.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no executable is found.
     """
     env = os.environ.get("LOOPUSS_SPICE_PATH")
     if env and Path(env).exists():
@@ -521,7 +553,8 @@ def run_spice(net_paths, raw_paths, keep_raw=False, *, keep_vars=None, max_worke
             prefix = ["xvfb-run", "-a"] + prefix
 
         args = [
-            (net, raw, prefix, exe, keep_raw, keep_vars) for net, raw in zip(net_paths, raw_paths)
+            (net, raw, prefix, exe, keep_raw, keep_vars)
+            for net, raw in zip(net_paths, raw_paths, strict=True)
         ]
         ctl = _Cancellation()
         if workers > 1:

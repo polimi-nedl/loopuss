@@ -20,7 +20,24 @@ if TYPE_CHECKING:
 def noise_model(circ: LoopUS, freq: np.ndarray):
     """Analytical output noise PSD.
 
-    Returns (Sout (n_out x F), freq).
+    Sums, through the circuit transfer, the thermal noise of the input and
+    feedback arrays at 300 K (each unless it is ``noiseless``), the current
+    noise of the op-amp inputs wired to the arrays, and the op-amp voltage
+    noise. The white spectrum then rolls off as a single pole at the harmonic
+    mean of the circuit's pole magnitudes.
+
+    Parameters
+    ----------
+    circ : LoopUS
+    freq : ndarray, shape (F,)
+        Frequencies [Hz].
+
+    Returns
+    -------
+    Sout : ndarray, shape (len(circ.output_mask), F)
+        Output noise density [V/√Hz].
+    freq : ndarray
+        The input frequencies.
     """
     from scipy.constants import Boltzmann
 
@@ -28,18 +45,24 @@ def noise_model(circ: LoopUS, freq: np.ndarray):
     T1 = scipy.linalg.inv(circ.transfer("inverting"))
     T2 = T[1] + T[3]
 
-    # feedback resistor thermal noise
+    # feedback crossbar thermal noise
     if not circ.feedback_array.noiseless:
-        SiGf = 4 * Boltzmann * 300 * np.sum(circ.feedback_array.G, axis=1)
+        SiGf = 4 * Boltzmann * 300 * np.sum(np.abs(circ.feedback_array.G), axis=1)
     else:
         SiGf = 0.0
+
+    # input crossbar thermal noise
+    if not circ.input_array.noiseless:
+        SiGin = 4 * Boltzmann * 300 * np.sum(np.abs(circ.input_array.G), axis=1)
+    else:
+        SiGin = 0.0
 
     # OA input current noise (masked by sign), then squared sum
     SiOA = np.array([np.asarray(m.noise_current, float).ravel() for m in circ.oa_models])  # (n, 2)
     SiOA[circ.sign_vector > 0, 0] = 0.0
     SiOA[circ.sign_vector < 0, 1] = 0.0
     SiOA = np.sum(SiOA, axis=1) ** 2
-    Sin = SiOA + SiGf
+    Sin = SiOA + SiGf + SiGin
 
     # OA input voltage noise
     Svn = np.array([float(m.noise_voltage) for m in circ.oa_models]) ** 2

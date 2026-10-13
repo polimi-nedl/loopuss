@@ -40,9 +40,14 @@ def test_pwl_transient_matches_reference(pwl_data):
     time = np.concatenate([[0.0], np.logspace(-12, np.log10(5e-5), 5000)])
     Vout, tout = circ.tran("model", time)
 
-    assert Vout.shape == D["Vout"].shape
-    np.testing.assert_allclose(tout, D["time"].ravel(), rtol=0, atol=1e-9)
+    # The stored reference ran on to the last PWL knot (100 us), past the
+    # requested 50 us; the model now stops at the requested end. Compare the
+    # requested span, where the time points are the same.
+    span = D["time"].ravel() <= time[-1]
+    Vref, tref = D["Vout"][:, span], D["time"].ravel()[span]
+    assert Vout.shape == Vref.shape
+    np.testing.assert_allclose(tout, tref, rtol=0, atol=1e-9)
     # Steady state is essentially exact; the transient tracks within a small
     # tolerance set by the adaptive saturation subdivision.
-    np.testing.assert_allclose(Vout[:, -1], D["Vout"][:, -1], rtol=1e-6, atol=1e-9)
-    np.testing.assert_allclose(Vout, D["Vout"], rtol=0, atol=1e-4)
+    np.testing.assert_allclose(Vout[:, -1], Vref[:, -1], rtol=1e-6, atol=1e-9)
+    np.testing.assert_allclose(Vout, Vref, rtol=0, atol=1e-4)

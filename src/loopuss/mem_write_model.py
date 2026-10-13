@@ -9,8 +9,97 @@ import numpy as np
 from .periph_circ import PeriphCirc
 from .tech_model import TechModel
 
+# Preset table of published programming-peripheral characterisations. A string
+# ``dynamic_energy`` names a per-bit energy law, resolved in _load_preset.
+_PRESETS: dict[str, dict] = {
+    "SRAM": dict(
+        type="SRAM",
+        Vsupply=[0, 1.2],
+        leakage_power=0.11e-7,
+        latency=1e-9,
+        dynamic_energy=7.0539e-12,
+        area=3.09e-12,
+        SigmaG=0,
+    ),
+    "Sancandi21": dict(
+        type="SRAM",
+        Vsupply=[0, 1.2],
+        leakage_power=5.4e-9,
+        latency=2.5e-9,
+        dynamic_energy="lambda_n",
+        area=6.46e-12,
+        SigmaG=0,
+        technology=TechModel(node=90e-9),
+    ),
+    "Zahoor20_SRAM": dict(
+        type="SRAM",
+        Vsupply=[0, 1.2],
+        leakage_power=0,
+        latency=1e-9,
+        dynamic_energy="lambda_n1",
+        area=3e-12,
+        SigmaG=0,
+    ),
+    "Gul22_6T": dict(
+        type="SRAM",
+        Vsupply=[0, 1.2],
+        leakage_power=5.6e-9,
+        latency=33.53e-12,
+        dynamic_energy="lambda_n0815",
+        area=4.22e-15,
+        SigmaG=0,
+    ),
+    "Zahoor20_RRAM": dict(
+        type="RRAM",
+        Vsupply=[0, 1.2],
+        leakage_power=0,
+        latency=5e-9,
+        dynamic_energy="lambda_n01",
+        area=3e-12,
+        SigmaG=0,
+    ),
+    "IGVVA10": dict(
+        type="RRAM",
+        Vsupply=[0, 1.2],
+        leakage_power=0,
+        latency=7e-6,
+        dynamic_energy=1.5e-9,
+        area=1.79e-12,
+        SigmaG=5.8e-6,
+    ),
+}
+
 
 class MemWriteModel(PeriphCirc):
+    """Memory programming (write) peripheral model.
+
+    :meth:`LoopUS.reprogram <loopuss.LoopUS.reprogram>` uses it to program the
+    crossbar conductances; this also happens once at construction. It adds
+    programming variability and accounts for programming latency and energy.
+    See :doc:`/presets` for the literature presets.
+
+    Parameters
+    ----------
+    preset_type : str, optional
+        Preset name. Default ``"ideal"``: exact, instantaneous and free.
+    SigmaG : float, optional
+        Standard deviation of the programming error. Default 0.
+    sigma_type : str, optional
+        ``"absolute"`` (default): ``SigmaG`` is a conductance [S] added to
+        every programmable cell. Any other value: ``SigmaG`` is relative to
+        each cell's target conductance.
+    latency : float, optional
+        Time to program one chunk of cells [s]. Default 0.
+    parallel_write : float or array_like of 2 floats, optional
+        Rows and columns programmed simultaneously; a scalar applies to both,
+        and ``inf`` means the whole dimension. Default ``[1, 1]``, one cell at
+        a time. The circuit area counts ``sum(parallel_write)`` drivers.
+    **kwargs
+        Forwarded to :class:`~loopuss.PeriphCirc`. ``dynamic_energy`` is the
+        energy per programmed cell [J]; some presets set it to a function of
+        the cell's ``Nbit`` instead (energy per bit).
+    """
+
     def __init__(
         self,
         preset_type: str = "ideal",
@@ -38,69 +127,14 @@ class MemWriteModel(PeriphCirc):
             self.parallel_write = np.array([v[0], v[0]]) if v.size == 1 else v[:2]
 
     def _load_preset(self, preset_type: str) -> None:
-        _P = {
-            "SRAM": dict(
-                type="SRAM",
-                Vsupply=[0, 1.2],
-                leakage_power=0.11e-7,
-                latency=1e-9,
-                dynamic_energy=7.0539e-12,
-                area=3.09e-12,
-                SigmaG=0,
-            ),
-            "Sancandi21": dict(
-                type="SRAM",
-                Vsupply=[0, 1.2],
-                leakage_power=5.4e-9,
-                latency=2.5e-9,
-                dynamic_energy="lambda_n",
-                area=6.46e-12,
-                SigmaG=0,
-                technology=TechModel(node=90e-9),
-            ),
-            "Zahoor20_SRAM": dict(
-                type="SRAM",
-                Vsupply=[0, 1.2],
-                leakage_power=0,
-                latency=1e-9,
-                dynamic_energy="lambda_n1",
-                area=3e-12,
-                SigmaG=0,
-            ),
-            "Gul22_6T": dict(
-                type="SRAM",
-                Vsupply=[0, 1.2],
-                leakage_power=5.6e-9,
-                latency=33.53e-12,
-                dynamic_energy="lambda_n0815",
-                area=4.22e-15,
-                SigmaG=0,
-            ),
-            "Zahoor20_RRAM": dict(
-                type="RRAM",
-                Vsupply=[0, 1.2],
-                leakage_power=0,
-                latency=5e-9,
-                dynamic_energy="lambda_n01",
-                area=3e-12,
-                SigmaG=0,
-            ),
-            "IGVVA10": dict(
-                type="RRAM",
-                Vsupply=[0, 1.2],
-                leakage_power=0,
-                latency=7e-6,
-                dynamic_energy=1.5e-9,
-                area=1.79e-12,
-                SigmaG=5.8e-6,
-            ),
-        }
-        if preset_type not in _P:
+        if preset_type == "ideal":
             return
-        p = _P[preset_type]
+        if preset_type not in _PRESETS:
+            raise self._unknown_preset(preset_type, ["ideal", *_PRESETS])
+        p = _PRESETS[preset_type]
         self.type = p.get("type", preset_type)
         self.Vsupply = np.asarray(p.get("Vsupply", [-np.inf, np.inf]), dtype=float)
-        self.leakage_power = float(p.get("leakage_power", 0.0))
+        self._set_supply_from_power(float(p.get("leakage_power", 0.0)))
         self.area = float(p.get("area", 0.0))
         self.SigmaG = float(p.get("SigmaG", 0.0))
         self.technology = p.get("technology", TechModel())
@@ -122,11 +156,39 @@ class MemWriteModel(PeriphCirc):
         else:
             self.dynamic_energy = float(de)
 
-        vspan = float(np.diff(self.Vsupply)[0])
-        self.Isupply = self.leakage_power / vspan if (np.isfinite(vspan) and vspan > 0) else 0.0
-
     def program(self, crossbar) -> tuple:
-        """Program a CrossBar with noise. Returns (Y, T, E, Ed, Es)."""
+        """Program a crossbar.
+
+        Every cell in ``crossbar.prog_mask`` receives a Gaussian programming
+        error (see ``SigmaG`` and ``sigma_type``), drawn from NumPy's global
+        random generator. Cells whose sign would flip are set to zero. The
+        result is not re-quantized.
+
+        Programming takes ``latency * Nchunks`` seconds, with
+        ``Nchunks = prod(ceil(shape / parallel_write))``. Dynamic energy is
+        ``dynamic_energy`` per programmable cell. Static energy is
+        ``leakage_power`` times the programming time. Both are added to the
+        accumulator.
+
+        Parameters
+        ----------
+        crossbar : CrossBar
+            Target array.
+
+        Returns
+        -------
+        Y : CrossBar
+            Programmed array. It keeps the line resistance, memory model,
+            programming mask and the noise and buffer settings of ``crossbar``.
+        T : float
+            Programming latency [s].
+        E : float
+            Total programming energy ``Ed + Es`` [J].
+        Ed : float
+            Dynamic energy [J].
+        Es : float
+            Static energy [J].
+        """
         from .crossbar import CrossBar
 
         if crossbar.G.size == 0:

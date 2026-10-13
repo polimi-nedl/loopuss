@@ -27,7 +27,7 @@ def main():
 
     Gin = CrossBar(np.empty((M + 2 * N, 0)))
     Gf = CrossBar(L * G0)
-    circ = LoopUS(Gin, Gf, sign_vector=S, oa_model=oa, verbose=True)
+    circ = LoopUS(Gin, Gf, sign_vector=S, oa_model=oa)
 
     size = M + 2 * N
     poles = np.zeros((size, 2**N), dtype=complex)

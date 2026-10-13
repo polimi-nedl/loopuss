@@ -32,8 +32,8 @@ def main():
     Gf = CrossBar(A * G0)
     GfIR = CrossBar(A * G0, line_resistance=1000)
 
-    circ = LoopUS(Gin, Gf, verbose=True)
-    circIR = LoopUS(Gin, GfIR, verbose=True)
+    circ = LoopUS(Gin, Gf)
+    circIR = LoopUS(Gin, GfIR)
 
     y = rng.random(N)
     circ.set_inputs(CurrentSignal.ytoi(y, I0=I0))

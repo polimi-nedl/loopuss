@@ -1,9 +1,9 @@
-[![Banner](docs/sfx/logo_white_small.png)](https://github.com/polimi-nedl/loopuss)
+[![Banner](https://raw.githubusercontent.com/polimi-nedl/loopuss/main/docs/sfx/logo_white_small.png)](https://github.com/polimi-nedl/loopuss)
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-8-orange.svg?style=flat-square)](#contributors) ![Version-shield](https://img.shields.io/badge/version-v1.0.0-blue) [![License-shield](https://img.shields.io/badge/license-AGPLv3-yellow.svg)](LICENSE)
+[![All Contributors](https://img.shields.io/badge/all_contributors-8-orange.svg?style=flat-square)](#contributors) ![Version-shield](https://img.shields.io/badge/version-v1.1.0-blue) [![License-shield](https://img.shields.io/badge/license-AGPLv3-yellow.svg)](LICENSE)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
-> Overview & full documentation available on https://github.com/polimi-nedl/loopuss
+> Documentation: https://loopuss.readthedocs.io
 
 **loopus²** is a Python framework for the behavioral simulation and architectural benchmarking of open- and closed-loop analog in-memory computing circuits. It provides compact models of memory arrays, operational amplifiers, data converters, programming circuits, and other system components, together with interchangeable analytical and SPICE simulation backends.
 
@@ -19,15 +19,9 @@ The framework supports:
 
 ## Installation
 
-The package requires Python 3.8+. LTspice XVII or later is required only for SPICE-based analyses.
+The package requires Python 3.10+. LTspice XVII or later is required only for SPICE-based analyses.
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/polimi-nedl/loopuss
-   cd loopuss
-   ```
-
-2. Create and activate a virtual environment:
+1. Create and activate a virtual environment:
    ```bash
    python -m venv .venv
    # Windows Powershell:
@@ -38,52 +32,70 @@ The package requires Python 3.8+. LTspice XVII or later is required only for SPI
    source .venv/bin/activate
    ```
 
-3. Install the package in editable mode with development dependencies (for testing and linting):
+2. Install the package:
    ```bash
-   pip install -e ".[dev]"
+   pip install git+https://github.com/polimi-nedl/loopuss
    ```
 
-4. **LTSpice Configuration**:
-   The framework attempts to resolve the LTSpice path automatically. If LTSpice is not installed at the default location, set the environment variable `LOOPUSS_SPICE_PATH` or configure it in `src/loopuss/config.json`:
-   ```json
-   {
-       "spicePath": "C:\\Program Files\\LTC\\LTspiceXVII\\XVII.exe"
-   }
+3. **LTspice configuration**:
+   loopus² finds LTspice at its default install location on Windows and macOS. Otherwise, set the `LOOPUSS_SPICE_PATH` environment variable to the executable:
+   ```bash
+   # Windows Powershell:
+   $env:LOOPUSS_SPICE_PATH = "D:\Tools\LTspice\LTspice.exe"
+   # Linux/macOS:
+   export LOOPUSS_SPICE_PATH="/path/to/LTspice"
    ```
+   On Linux, LTspice runs through Wine: point the variable at the Windows executable. See the [installation guide](https://loopuss.readthedocs.io/en/latest/installation.html) for the other options and how to check the setup.
 
 ---
 
-## Usage Example
+## Quick Start
 
 ```python
+import matplotlib.pyplot as plt
 import numpy as np
-from loopuss import CrossBar, LoopUS, VoltageSignal, OAModel, ADCModel
+
+from loopuss import ADCModel, CrossBar, CurrentSignal, LoopUS, OAModel
+from loopuss.plotting import tranplot, corrplot
 
 # Parameters
 N = 10
 G0 = 1.0 / 10e3
 V0 = 1.0
+I0 = G0 * V0
 
 # 1. Setup crossbar conductances
 A = np.random.rand(N, N)
-Gin = CrossBar(np.empty((N, 0)))  # Input array
-Gf  = CrossBar(A * G0)            # Feedback array
+A = A.T @ A + N * np.eye(N)
+A = A / A.max()
+Gin = CrossBar(np.empty((N, 0)))  # Input array (no columns: y is injected as current)
+Gf = CrossBar(A * G0)  # Feedback array
 
 # 2. Instantiate LoopUS circuit with peripheral models
-circ = LoopUS(
-    Gin, Gf,
-    OAModel=OAModel('1P'),
-    ADCModel=ADCModel('Fan19'),
-    benchEnable=True,
-    verbose=True
-)
+circ = LoopUS(Gin, Gf, oa_model=OAModel("1P"), adc_model=ADCModel("Fan19"), bench_enable=True)
 
 # 3. Apply inputs and run transient simulation
 y = np.random.rand(N)
-circ.set_inputs(VoltageSignal.ytov(y, V0))
+circ.set_inputs(CurrentSignal.ytoi(y, I0=I0))
 
-time = np.concatenate([[0.0], np.logspace(-10, -5, 1000)])
+Tstop = 100e-6
+time = np.concatenate([[0.0], np.logspace(-10, np.log10(Tstop), 1000)])
 Vout, t = circ.tran("model", time)
+
+# 4. Analyze the results
+tranplot(t, Vout)
+plt.xlim(1e-10, Tstop)
+plt.title("Transient")
+
+# The circuit settles on the solution of A x = -y
+ref = -np.linalg.solve(A, y)
+_, ax = plt.subplots()
+corrplot(Vout[:, -1], ref, ax=ax)
+ax.set_title(r"Circuit vs $-A^{-1} y$")
+
+plt.show()
+
+print(f"Relative error: {np.linalg.norm(Vout[:, -1] - ref) / np.linalg.norm(ref):.3e}")
 
 # Get benchmark report
 report = circ.benchmark()
@@ -93,25 +105,9 @@ print(f"Total Energy: {report.energy['Total'] * 1e9:.3f} nJ")
 
 ---
 
-## Running Tests
+## Documentation
 
-Tests are managed using `pytest`. Run the entire suite with:
-```bash
-pytest
-```
-
----
-
-## Code Formatting & Linting
-
-We use `ruff` to enforce formatting and import sorting rules (configured in `pyproject.toml`):
-```bash
-# Format codebase
-ruff format .
-
-# Check lint rules
-ruff check .
-```
+The [documentation](https://loopuss.readthedocs.io) has the user guide, examples, preset tables and API reference. Its installation guide also covers development: running the tests, linting and building the documentation.
 
 ---
 
@@ -123,15 +119,15 @@ This project has received funding from the European Research Council through the
 ### Citation
 The reference publication describing loopus² is forthcoming. Until a formal publication citation becomes available, please cite the software:
 
-> P. Mannocci et al., *loopus²*, version 1.0.0, 2026. Available: https://github.com/polimi-nedl/loopuss
+> P. Mannocci et al., *loopus²*, version 1.1.0, 2026. Available: https://github.com/polimi-nedl/loopuss
 
 ### Development and Maintenance
-loopus² was initiated by [Piergiulio Mannocci](mailto:piergiulio.mannocci@polimi.it) and is currently maintained by [Piergiulio Mannocci](mailto:piergiulio.mannocci@polimi.it) and [Eugenio Montinaro](mailto:eugenio.montinaro@mail.polimi.it).
+loopus² was initiated by [Piergiulio Mannocci](mailto:pier@unconv.ai) and is currently maintained by [Piergiulio Mannocci](mailto:pier@unconv.ai) and [Eugenio Montinaro](mailto:eugenio.montinaro@mail.polimi.it).
 See the [Contributors](#contributors) section for the complete list of developers and contributors.
 
 ### Contact
 For administrative or project-related questions, please contact [Prof. Daniele Ielmini](mailto:daniele.ielmini@polimi.it).
-For technical questions, bug reports, or feature requests, please contact [Piergiulio Mannocci](mailto:piergiulio.mannocci@polimi.it) or [Eugenio Montinaro](mailto:eugenio.montinaro@mail.polimi.it).
+For technical questions, bug reports, or feature requests, please contact [Piergiulio Mannocci](mailto:pier@unconv.ai) or [Eugenio Montinaro](mailto:eugenio.montinaro@mail.polimi.it).
 
 ## Contributors
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
@@ -139,8 +135,8 @@ For technical questions, bug reports, or feature requests, please contact [Pierg
 <!-- markdownlint-disable -->
 <table align="center">
   <tr>
-    <td align="center"><a href="https://github.com/jackphen"><img src="https://avatars.githubusercontent.com/u/22836767?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Piergiulio Mannocci</b></sub></a><br /><a href="https://github.com/polimi-nedl/loopuss/commits?author=jackphen" title="Code">💻</a> <a href="https://github.com/polimi-nedl/loopuss/issues?q=author%3Ajackphen" title="Bug reports">🐛</a> <a href="https://github.com/polimi-nedl/loopuss/commits?author=jackphen" title="Documentation">📖</a> <a href="https://github.com/polimi-nedl/loopuss/commits?author=jackphen" title="User Testing">📓</a> <a href="https://github.com/polimi-nedl/loopuss/commits?author=jackphen" title="Tutorials">✅</a></td>
-    <td align="center"><a href="https://github.com/eumonti"><img src="https://avatars.githubusercontent.com/u/62185102?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Eugenio Montinaro</b></sub></a><br /><a href="https://github.com/polimi-nedl/loopuss/commits?author=eumonti" title="Code">💻</a> <a href="https://github.com/polimi-nedl/loopuss/issues?q=author%3Aeumonti" title="Tests">⚠️</a></td>
+    <td align="center"><a href="https://github.com/jackphen"><img src="https://avatars.githubusercontent.com/u/22836767?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Piergiulio Mannocci</b></sub></a><br /><a href="https://github.com/polimi-nedl/loopuss/commits?author=jackphen" title="Code">💻</a> <a href="https://github.com/polimi-nedl/loopuss/issues?q=author%3Ajackphen" title="Bug reports">🐛</a> <a href="https://github.com/polimi-nedl/loopuss/commits?author=jackphen" title="Documentation">📖</a> <a href="https://github.com/polimi-nedl/loopuss/commits?author=jackphen" title="User Testing">📓</a> <a href="https://github.com/polimi-nedl/loopuss/commits?author=jackphen" title="Tutorials">✅</a> <a href="https://github.com/polimi-nedl/loopuss/commits?author=jackphen" title="Tests">⚠️</a></td>
+    <td align="center"><a href="https://github.com/eumonti"><img src="https://avatars.githubusercontent.com/u/62185102?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Eugenio Montinaro</b></sub></a><br /><a href="https://github.com/polimi-nedl/loopuss/commits?author=eumonti" title="Code">💻</a> <a href="https://github.com/polimi-nedl/loopuss/issues?q=author%3Aeumonti" title="Bug reports">🐛</a> <a href="https://github.com/polimi-nedl/loopuss/commits?author=eumonti" title="Documentation">📖</a> <a href="https://github.com/polimi-nedl/loopuss/commits?author=eumonti" title="User Testing">📓</a> <a href="https://github.com/polimi-nedl/loopuss/commits?author=eumonti" title="Tutorials">✅</a> <a href="https://github.com/polimi-nedl/loopuss/issues?q=author%3Aeumonti" title="Tests">⚠️</a></td>
     <td align="center"><a href="https://github.com/OldHenry96"><img src="https://avatars.githubusercontent.com/u/61509046?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Enrico Melacarne</b></sub></a><br /><a href="https://github.com/polimi-nedl/loopuss/commits?author=OldHenry96" title="Code">💻</a> <a href="https://github.com/polimi-nedl/loopuss/issues?q=author%3AOldHenry96" title="Bug reports">🐛</a></td>
     <td align="center"><a href="https://github.com/Giuseppe-Falcone"><img src="https://avatars.githubusercontent.com/u/101051093?v=4?s=100" width="100px;" alt=""/><br /><sub><b>Giuseppe Falcone</b></sub></a><br /><a href="https://github.com/polimi-nedl/loopuss/commits?author=Giuseppe-Falcone" title="Tests">⚠️</a></td>
    </tr>

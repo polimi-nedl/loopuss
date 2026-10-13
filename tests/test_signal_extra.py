@@ -30,10 +30,24 @@ def test_pwl_previous_interpolation():
     np.testing.assert_array_equal(out, [0, 0, 0, 1, 1, 3])
 
 
+def test_pwl_delay_shifts_the_knots():
+    s = VoltageSignal("PWL", vval=[0, 1], time=[0, 1]).add_delay(2.0)
+    np.testing.assert_array_equal(s.to_array([0.0, 2.0, 2.5, 3.0]), [0, 0, 0, 1])
+    np.testing.assert_allclose(np.unique(s.breakpoints()), [2.0, 3.0])
+    assert "PWL(2 0 3 1 )" in s.to_spice("1", "p", "n")
+
+
 def test_sine_waveform_values():
     s = VoltageSignal("SINE", vamp=1.0, voff=0.0, freq=1.0, phi=0.0, td=0.0)
     t = np.array([0.0, 0.25, 0.5])
     np.testing.assert_allclose(s.to_array(t), [0.0, 1.0, 0.0], atol=1e-12)
+
+
+def test_sine_phase_is_in_degrees_like_spice():
+    s = VoltageSignal("SINE", vamp=1.0, voff=0.0, freq=1.0, phi=90.0, td=0.0)
+    np.testing.assert_allclose(s.to_array(np.array([0.0, 0.5])), [1.0, -1.0], atol=1e-12)
+    # The netlist passes the same number, which LTspice reads in degrees.
+    assert " 90 " in s.to_spice("1", "a", "0")
 
 
 def test_sine_with_offset_before_delay():

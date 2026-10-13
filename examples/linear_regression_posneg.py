@@ -38,9 +38,7 @@ def main():
         OAModel("1P", GBWP=100e6) for _ in range(n_buf)
     ]
 
-    circ = LoopUS(
-        Gin, Gf, oa_model=OAs, sign_vector=S, output_mask=M + np.arange(N + 1), verbose=True
-    )
+    circ = LoopUS(Gin, Gf, oa_model=OAs, sign_vector=S, output_mask=M + np.arange(N + 1))
 
     y = rng.random(M)
     circ.set_inputs(CurrentSignal.ytoi(y, I0=I0))

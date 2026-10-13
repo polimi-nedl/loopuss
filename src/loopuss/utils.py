@@ -38,7 +38,11 @@ _SI = [
 
 
 def si_format(value: float, unit: str = "") -> str:
-    """Format a number with an SI prefix."""
+    """Format a number with an SI prefix.
+
+    Uses ``u`` for micro and 4 significant digits, e.g.
+    ``si_format(1.5e-6, "A")`` gives ``"1.5 uA"``.
+    """
     if value == 0:
         return f"0 {unit}".strip()
     abs_val = abs(value)
@@ -175,6 +179,20 @@ def relerr(xcomp, xexac, n: int | float = 2):
 
     Norms are taken along the first axis, so passing an ``(m, k)`` ``xcomp``
     against an ``(m, 1)`` reference returns the per-column relative error.
+
+    Parameters
+    ----------
+    xcomp : array_like
+        Computed value.
+    xexac : array_like
+        Exact value.
+    n : int or float, optional
+        Norm order, as in :func:`numpy.linalg.norm`. Default 2.
+
+    Returns
+    -------
+    float or ndarray
+        ``||xcomp - xexac|| / ||xexac||``.
     """
     xcomp = np.asarray(xcomp, dtype=float)
     xexac = np.asarray(xexac, dtype=float)

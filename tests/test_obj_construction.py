@@ -70,9 +70,7 @@ def test_current_dac_preset():
 
 # --- MemoryModel / MemWriteModel ---
 def test_memory_model_default():
-    mm = MemoryModel(
-        "GenericMemory", LRS=1e-4, HRS=1e-6, ZRS=0.0, window=100, technology=TechModel(), area=1e-12
-    )
+    mm = MemoryModel(LRS=1e-4, HRS=1e-6, ZRS=0.0, window=100, technology=TechModel(), area=1e-12)
     assert mm.LRS == 1e-4
     assert mm.HRS == 1e-6
 
@@ -115,7 +113,6 @@ def test_crossbar_transfer_zero_lr():
         G,
         line_resistance=0.0,
         memory_model=MemoryModel(
-            "GenericMemory",
             LRS=1.0,
             HRS=0.0,
             ZRS=0.0,

@@ -54,3 +54,11 @@ def test_errbound_input_realises_bound(err_data):
 
     ref = -np.linalg.solve(A, y) * V0
     np.testing.assert_allclose(relerr(Vmodel[:, -1], ref), maxerr, rtol=1e-3)
+
+
+def test_errbound_rejects_unknown_error_types():
+    c = LoopUS(None, CrossBar(np.eye(3) * 1e-4))
+    with pytest.raises(ValueError, match="error_type"):
+        c.errbound("statik")
+    c.errbound("Static")
+    c.errbound("DYNAMIC")

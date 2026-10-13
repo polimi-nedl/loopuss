@@ -107,7 +107,7 @@ def main():
     plt.gcf().tight_layout()
 
     # Breakdown pie charts, programming contribution excluded (Bvect.bdplot).
-    fig = BenchReport.bdplot([BSRAM, BRRAM], "-noprog", labels=["SRAM", "RRAM"])
+    BenchReport.bdplot([BSRAM, BRRAM], "-noprog", labels=["SRAM", "RRAM"])
 
     plt.show()
 

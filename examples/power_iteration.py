@@ -24,9 +24,9 @@ def main():
 
     Gf = CrossBar(np.eye(N) * G0)
     Gin = CrossBar(A * G0)
-    circ = LoopUS(Gin, Gf, verbose=True)
+    circ = LoopUS(Gin, Gf)
 
-    dsp = DSPModel(DSPFunction=lambda x: x / np.max(np.abs(x)), complexity=N)
+    dsp = DSPModel(dsp_function=lambda x: x / np.max(np.abs(x)), complexity=N)
 
     circ.set_inputs(VoltageSignal.ytov(rng.random(N), V0=V0, stype="DC"))
 

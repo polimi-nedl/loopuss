@@ -1,3 +1,5 @@
+"""loopus²: behavioral simulation and benchmarking of analog in-memory computing circuits."""
+
 from . import analysis
 from .adc_model import ADCModel
 from .converter_model import ConverterModel

@@ -5,8 +5,8 @@ message: >-
 
 title: "loopus²"
 type: software
-version: "1.0.0"
-date-released: 2026-07-19
+version: "1.1.0"
+date-released: 2026-10-13
 
 authors:
   - family-names: "Mannocci"

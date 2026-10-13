@@ -20,13 +20,38 @@ from .utils import GroupedDisplay
 class BenchReport(GroupedDisplay):
     """Benchmark report.
 
-    Latency / Energy / Area are dict structures:
-      - Latency: {'Programming','Computing','PostProcessing','Total'}
-      - Energy:  {'Breakdown' (ndarray rows=components x cols=phase/kind),
-                  'Labels' (list[str]), 'Total' (float)}
-      - Area:    {'DAC','ADC','OA','MemWrite','InputArray','FeedbackArray',
-                  'DSP'(optional),'Total'}
-    Power is a length-2 array [mean, max].
+    Returned by :meth:`LoopUS.benchmark <loopuss.LoopUS.benchmark>` and
+    :meth:`GPUModel.benchmark <loopuss.GPUModel.benchmark>`. Reports combine
+    arithmetically: ``A + B`` is ``combine(A, B, "serial", noarea=True,
+    noprog=True)`` and ``b * A`` is ``scale(A, b, "parallel", noarea=False,
+    noprog=True)``.
+
+    Attributes
+    ----------
+    latency : dict
+        ``Programming``, ``Computing``, ``PostProcessing`` and ``Total`` [s].
+    energy : dict
+        ``Breakdown`` is an array with one row per component, named in
+        ``Labels``. Its six columns are the static and dynamic energy of the
+        Programming, Computing and PostProcessing phases [J]. ``Total`` is the
+        sum [J]. Reports from ``LoopUS.benchmark`` also hold one nested dict
+        per component; combined reports do not.
+    power : ndarray, shape (2,)
+        Mean and peak power [W].
+    area : dict
+        Area of each component, plus ``Total`` [m²].
+    complexity : float
+        Operations per run [OPs].
+    ops : float
+        Total operations [OPs].
+    throughput : float
+        ``ops / latency["Total"]`` [OPS].
+    energy_efficiency : float
+        ``ops / energy["Total"]`` [OPS/W].
+    area_efficiency : float
+        ``throughput / area["Total"]`` [OPS/m²].
+    circuit : LoopUS, GPUModel or str
+        Copy of the benchmarked object, or a label for derived reports.
     """
 
     latency: dict | None = None
@@ -96,7 +121,30 @@ class BenchReport(GroupedDisplay):
         noarea: bool = True,
         noprog: bool = True,
     ) -> BenchReport:
-        """Combine two BenchReports (report addition)."""
+        """Combine two reports.
+
+        Parameters
+        ----------
+        A, B : BenchReport
+            Reports to combine.
+        mode : {"serial", "parallel"}, optional
+            ``"serial"`` (default): ``B`` runs after ``A``. Computing and
+            post-processing latencies add, mean powers are averaged, the peak
+            power is the larger one and complexities are averaged.
+            ``"parallel"``: ``B`` runs alongside ``A``. Latencies take the
+            larger value, while powers and complexities add.
+        noarea : bool, optional
+            Keep ``A``'s area (default). Otherwise areas combine per component,
+            taking the larger one in serial mode and the sum in parallel mode.
+        noprog : bool, optional
+            Count programming once, from ``A`` (default). This drops ``B``'s
+            programming latency and the first row of its energy breakdown.
+
+        Returns
+        -------
+        BenchReport
+            Energies and ``ops`` add, and the efficiencies are recomputed.
+        """
         if mode not in ("serial", "parallel"):
             raise ValueError("mode must be either serial or parallel.")
 
@@ -172,7 +220,32 @@ class BenchReport(GroupedDisplay):
         noarea: bool = False,
         noprog: bool = True,
     ) -> BenchReport:
-        """Multiply a BenchReport by a scalar."""
+        """Scale a report to ``b`` repetitions of its workload.
+
+        Parameters
+        ----------
+        A : BenchReport
+            Report to scale.
+        b : float
+            Number of repetitions.
+        mode : {"parallel", "serial"}, optional
+            ``"parallel"`` (default): ``b`` copies run side by side, so latency
+            is unchanged while power and area (see ``noarea``) scale by ``b``.
+            ``"serial"``: ``b`` runs in sequence, so computing and
+            post-processing latencies scale by ``b`` while power and area are
+            unchanged.
+        noarea : bool, optional
+            Leave the area unscaled in parallel mode. Default ``False``.
+        noprog : bool, optional
+            Leave programming unscaled: its latency (serial mode) and the
+            first energy-breakdown row. Default ``True``.
+
+        Returns
+        -------
+        BenchReport
+            The energy (except as per ``noprog``), ``complexity`` and ``ops``
+            scale by ``b``, and the efficiencies are recomputed.
+        """
         if mode not in ("serial", "parallel"):
             raise ValueError("mode must be either serial or parallel.")
 
@@ -232,6 +305,22 @@ class BenchReport(GroupedDisplay):
         Throughput, ``'-energy'`` -> Energy Efficiency, ``'-area'`` -> Area
         Efficiency (all three if none given). ``'-notext'`` hides the
         per-bar value annotations.
+
+        Call it on one report (``report.barplot()``) or on a list
+        (``BenchReport.barplot([A, B], labels=["A", "B"])``).
+
+        Parameters
+        ----------
+        *flags : str
+            Flags described above.
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on; a new figure by default.
+        labels : list of str, optional
+            One label per report. Default ``BR1``, ``BR2``, ...
+
+        Returns
+        -------
+        matplotlib.axes.Axes
         """
         import matplotlib.pyplot as plt
 
@@ -317,6 +406,21 @@ class BenchReport(GroupedDisplay):
         drops the programming (MemWrite / Programming) contribution;
         ``'-vert'`` / ``'-horiz'`` set the grid orientation (horizontal
         default); ``'-notitle'`` hides the subplot titles.
+
+        Call it on one report or on a list, like :meth:`barplot`.
+
+        Parameters
+        ----------
+        *flags : str
+            Flags described above.
+        fig : matplotlib.figure.Figure, optional
+            Figure to draw on; a new one by default.
+        labels : list of str, optional
+            One label per report. Default ``BR1``, ``BR2``, ...
+
+        Returns
+        -------
+        matplotlib.figure.Figure
         """
         import matplotlib.pyplot as plt
 
@@ -379,7 +483,7 @@ class BenchReport(GroupedDisplay):
                 if mask.any():
                     ax.pie(
                         vals[mask],
-                        labels=[l for l, m in zip(labs, mask) if m],
+                        labels=[l for l, m in zip(labs, mask, strict=True) if m],
                         autopct="%1.0f%%",
                         textprops={"fontsize": 7},
                     )
@@ -395,7 +499,8 @@ class BenchReport(GroupedDisplay):
 def sum_reports(
     reports, mode: str = "serial", noarea: bool = True, noprog: bool = True
 ) -> BenchReport:
-    """Sum a sequence of BenchReports."""
+    """Fold a sequence of reports with :meth:`BenchReport.combine`, using the
+    given ``mode``, ``noarea`` and ``noprog``."""
     reports = list(reports)
     C = reports[0]
     for r in reports[1:]:
@@ -404,7 +509,11 @@ def sum_reports(
 
 
 def mean_reports(reports) -> BenchReport:
-    """Average a sequence of BenchReports."""
+    """Average a sequence of reports.
+
+    Energy, latency, area, mean power, ``ops`` and ``complexity`` are
+    averaged; the peak power is the maximum over the reports.
+    """
     reports = list(reports)
     n = len(reports)
     # Re-derive as a plain average from the breakdowns/areas.
@@ -452,7 +561,43 @@ def mean_reports(reports) -> BenchReport:
 class TranReport(GroupedDisplay):
     """Transient analysis report.
 
-    Power/Energy are dict structures with component keys plus 'Total'.
+    Returned by :meth:`LoopUS.tran <loopuss.LoopUS.tran>` with
+    ``return_report=True``. It covers every op-amp and active input, not only
+    the masked outputs, on the solver's time grid before the ADC latency is
+    added.
+
+    Attributes
+    ----------
+    solver_type : str
+        Solver that produced the report.
+    time : ndarray, shape (T,)
+        Time points [s].
+    Vout : ndarray, shape (n, T)
+        Op-amp output voltages [V].
+    Voainn : ndarray, shape (n, T)
+        Voltage at the op-amp input wired to the arrays [V].
+    Voainp : ndarray, shape (n, T)
+        Voltage at the other op-amp input. Always zero, because reference
+        signals are not included.
+    Iout : ndarray, shape (n, T)
+        Op-amp output currents into the feedback array [A].
+    Vin : ndarray, shape (p, T)
+        Voltages applied to the input-array columns, DAC plus input
+        reference [V]. Columns outside ``input_mask_v`` sit at the reference.
+    I_Vin : ndarray, shape (p, T)
+        Currents drawn from those voltage sources [A].
+    Iin : ndarray, shape (n, T)
+        Input currents injected at the junctions [A]; 0 on rows outside
+        ``input_mask_i``.
+    power : dict of ndarray
+        Instantaneous dissipation of ``OA``, ``InputArray``,
+        ``FeedbackArray`` and ``Total`` [W].
+    energy : dict of float
+        Time integral of each ``power`` entry [J]; ``NaN`` for single-point
+        runs.
+    VoutADC, TimeADC : ndarray
+        The outputs and time returned by ``LoopUS.tran``, after the ADC and
+        DSP.
     """
 
     solver_type: Any = None
@@ -469,10 +614,12 @@ class TranReport(GroupedDisplay):
 
     @property
     def peak_power(self) -> float:
+        """Peak total power [W]."""
         return float(np.max(self.power["Total"]))
 
     @property
     def mean_power(self) -> float:
+        """Mean total power over the time samples, not time-weighted [W]."""
         return float(np.mean(self.power["Total"]))
 
     def _property_groups(self):
@@ -506,7 +653,20 @@ class TranReport(GroupedDisplay):
 # --- NoiseReport ---
 @dataclass(repr=False)
 class NoiseReport(GroupedDisplay):
-    """Noise analysis report."""
+    """Noise analysis report, returned by :meth:`LoopUS.noise
+    <loopuss.LoopUS.noise>`.
+
+    Attributes
+    ----------
+    solver_type : str
+        Solver that produced the report.
+    freq : ndarray, shape (F,)
+        Frequencies [Hz].
+    Sout : ndarray, shape (len(output_mask), F)
+        Output noise density [V/√Hz].
+    Pout : ndarray, shape (len(output_mask),)
+        RMS output noise over the sweep, ``sqrt(∫ Sout² df)`` [V].
+    """
 
     solver_type: Any = None
     freq: Any = None
@@ -515,10 +675,12 @@ class NoiseReport(GroupedDisplay):
 
     @property
     def mean_power(self) -> float:
+        """Mean of ``Pout`` over the outputs [V]."""
         return float(np.mean(self.Pout))
 
     @property
     def peak_power(self) -> float:
+        """Largest ``Pout`` [V]."""
         return float(np.max(self.Pout))
 
     def _property_groups(self):

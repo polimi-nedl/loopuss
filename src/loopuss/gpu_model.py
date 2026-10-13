@@ -6,6 +6,7 @@ import copy
 
 import numpy as np
 
+from .reports import BenchReport, _safe_div
 from .tech_model import TechModel
 from .utils import GroupedDisplay
 
@@ -136,7 +137,7 @@ _PRESETS: dict[str, dict] = {
         MemoryBandwidth=576e9,
         Power=120.0,
         Throughput=643e9,
-        Nbit=32.0,
+        Nbit=64.0,
         Ncores=9728.0 / 64.0,
         Fclk=1680e6,
         Area=379e-6,
@@ -164,22 +165,29 @@ _PRESETS: dict[str, dict] = {
         Area=1.4629e-6,
         node=40e-9,
     ),
-    "Artix7": dict(
-        MemorySize=620e3,
-        MemoryBandwidth=6.2e9,
-        Power=0.4125,
-        Throughput=1.284e9,
-        Ncores=1.0,
-        Fclk=600e6,
-        Nbit=16.0,
-        Area=1.4629e-6,
-        node=40e-9,
-    ),
 }
 
 
 class GPUModel(GroupedDisplay):
-    """Handle class for graphical processing units (GPUs)."""
+    """Digital processor model, used as a benchmarking baseline.
+
+    :meth:`benchmark` produces a :class:`~loopuss.BenchReport` comparable with
+    :meth:`LoopUS.benchmark <loopuss.LoopUS.benchmark>`. The presets cover
+    NVIDIA GPUs at several precisions plus one microcontroller; see
+    :doc:`/presets`.
+
+    Parameters
+    ----------
+    type_str : str, optional
+        Preset name. Default ``"NvidiaRTXA4500E_FP64"``. An unknown name
+        raises ``ValueError``.
+    **kwargs
+        Case-insensitive overrides: ``MemorySize`` [B],
+        ``MemoryBandwidth`` [B/s], ``Power`` [W], ``Ncores``, ``Fclk`` [Hz],
+        ``Throughput`` [OPS], ``Nbit``, ``Area`` [m²] and ``Technology``, as
+        a :class:`~loopuss.TechModel` or a node in metres. Unknown names are
+        ignored.
+    """
 
     def __init__(self, type_str: str = "NvidiaRTXA4500E_FP64", **kwargs):
         self.type: str = type_str
@@ -193,7 +201,11 @@ class GPUModel(GroupedDisplay):
         self.Area: float = 392e-6
         self.technology: TechModel = TechModel(node=8e-9)
 
-        # Load preset if present
+        if type_str not in _PRESETS:
+            raise ValueError(
+                f"Unknown GPUModel preset {type_str!r}. Available: {', '.join(_PRESETS)}."
+            )
+        # Load preset
         if type_str in _PRESETS:
             preset_vals = _PRESETS[type_str]
             self.MemorySize = float(preset_vals["MemorySize"])
@@ -232,8 +244,25 @@ class GPUModel(GroupedDisplay):
                     self.technology = TechModel(node=float(v))
 
     def benchmark(self, nops: float, ndata: float, psf: float = 1.0) -> BenchReport:
-        """Benchmark operation on GPUModel."""
-        from .reports import BenchReport, _safe_div
+        """Benchmark a workload.
+
+        Parameters
+        ----------
+        nops : float
+            Operations in the workload [OPs].
+        ndata : float
+            Number of values moved to the device, each ``Nbit / 8`` bytes.
+        psf : float, optional
+            Power scaling factor of the data-transfer phase, from 0 to 1.
+            Default 1.
+
+        Returns
+        -------
+        BenchReport
+            Report with a programming phase (data transfer,
+            ``ndata * Nbit / 8 / MemoryBandwidth``) drawing ``psf * Power``
+            and a computing phase (``nops / Throughput``) drawing ``Power``.
+        """
 
         # Problem occupation
         prob_size = ndata * self.Nbit / 8.0  # [bytes]

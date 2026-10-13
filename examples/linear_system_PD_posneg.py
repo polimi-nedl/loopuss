@@ -28,7 +28,7 @@ def main():
     Gin = CrossBar(np.empty((M.shape[0], 0)))
     Gf = CrossBar(M * G0)
 
-    circ = LoopUS(Gin, Gf, output_mask=np.arange(N), verbose=True)
+    circ = LoopUS(Gin, Gf, output_mask=np.arange(N))
 
     y = rng.random(N)
     circ.set_inputs(CurrentSignal.ytoi(y, I0=I0))

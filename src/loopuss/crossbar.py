@@ -10,7 +10,62 @@ from .tech_model import TechModel
 
 
 class CrossBar:
-    """Crosspoint array of resistive memory devices."""
+    """Crosspoint array of two-terminal memory devices.
+
+    Cell ``(i, j)`` connects row ``i`` to column ``j``. Rows run horizontally,
+    with a left and a right end; columns run vertically, with a bottom and a
+    top end.
+
+    At construction the conductances are clamped and quantized to
+    ``memory_model``:
+
+    * non-zero ``|G|`` is clamped to ``[HRS, LRS]``;
+    * if ``Nbit`` is finite, values are rounded to ``2**Nbit - 1`` steps over
+      ``[0, LRS]`` when ``HRS == ZRS``, or over ``[HRS, LRS]`` otherwise;
+    * zero cells are set to ``ZRS``, and the signs are restored;
+    * cells outside ``prog_mask`` keep their original value.
+
+    Parameters
+    ----------
+    G : ndarray, shape (M, N)
+        Cell conductances [S]. Negative values keep their sign. ``NaN`` marks
+        an absent cell: it becomes 0 and, unless ``prog_mask`` is given, is
+        excluded from programming.
+    C : float or ndarray, shape (M, N), optional
+        Cell capacitances [F]. Default 0. Non-zero values are stored but not
+        supported by the analyses: :meth:`LoopUS.pz <loopuss.LoopUS.pz>` and
+        SPICE netlisting raise ``NotImplementedError``.
+    line_resistance : float or array_like, optional
+        Interconnect resistance per cell step [Ω]. A scalar applies to both
+        rows and columns, and ``[rr, rc]`` sets them separately; in both cases
+        the end segments get half the value. ``[rr, rc, rrt, rct]`` also sets
+        the row and column end segments. Default 0, i.e. ideal lines.
+    prog_mask : ndarray of bool, shape (M, N), optional
+        Programmable cells. Only these are quantized, programmed by
+        :class:`~loopuss.MemWriteModel` and counted in the area. Default: the
+        cells that are not ``NaN`` in ``G``.
+    noiseless : bool, optional
+        Disable the thermal noise of the cells. Default ``True``.
+    ideal_buffers : bool, optional
+        Realize negative conductances through ideal inverting buffers on the
+        columns. Requires zero line resistance. Default ``False``.
+    memory_model : MemoryModel, optional
+        Cell model. Default: a memory model with ``LRS = max|G|``,
+        ``HRS`` equal to the smallest non-zero ``|G|``, ``ZRS = 0``, infinite
+        precision and ``4 F²`` cells at 14 nm, so the conductances pass
+        unchanged.
+    skip_quant : bool, optional
+        Skip clamping and quantization. Default ``False``.
+
+    Attributes
+    ----------
+    G : ndarray, shape (M, N)
+        Conductances after clamping and quantization [S].
+    line_resistance : ndarray, shape (4,)
+        ``[rr, rc, rrt, rct]`` [Ω].
+    area : float
+        ``memory_model.area`` times the number of programmable cells [m²].
+    """
 
     def __init__(
         self,
@@ -53,13 +108,16 @@ class CrossBar:
     # --- helpers ---
     @property
     def M(self) -> int:
+        """Number of rows."""
         return self.G.shape[0]
 
     @property
     def N(self) -> int:
+        """Number of columns."""
         return self.G.shape[1]
 
     def isempty(self) -> bool:
+        """True if the array has no cells."""
         return self.G.size == 0
 
     # --- validation & quantisation ---
@@ -79,7 +137,7 @@ class CrossBar:
             tech = TechModel()
             area = 4 * tech.node**2 if G.size else 0.0
             memory_model = MemoryModel(
-                "GenericMemory", LRS=lrs, HRS=hrs, ZRS=0.0, window=win, technology=tech, area=area
+                LRS=lrs, HRS=hrs, ZRS=0.0, window=win, technology=tech, area=area
             )
         self.memory_model = memory_model
 
@@ -114,7 +172,38 @@ class CrossBar:
         transfer_direction: tuple = ("col", "row"),
         xbar_orient: tuple = ("bottom", "left"),
     ) -> np.ndarray:
-        """Compute (and cache) a CrossBar transfer matrix."""
+        """Transfer matrix between the array's rows and columns.
+
+        Results are cached for each combination of arguments.
+
+        Parameters
+        ----------
+        output_variable : {"current", "voltage"}, optional
+            Output quantity. Default ``"current"``.
+        input_variable : {"voltage", "current"}, optional
+            Input quantity. Default ``"voltage"``.
+        transfer_direction : tuple of 2 str, optional
+            ``(from, to)``, each ``"row"`` or ``"col"``. Default
+            ``("col", "row")``.
+        xbar_orient : tuple of 2 str, optional
+            ``(column_end, row_end)``: the end of the columns (``"bottom"`` or
+            ``"top"``) and of the rows (``"left"`` or ``"right"``) where lines
+            are driven or sensed. Voltage outputs are probed at the opposite
+            end. Default ``("bottom", "left")``.
+
+        Returns
+        -------
+        ndarray
+            Shape ``(len(to), len(from))``, where a row line has length ``M``
+            and a column line ``N``.
+
+        Notes
+        -----
+        With zero line resistance the closed forms are used: for example the
+        column-to-row current transfer is ``G``, and the self transfers are
+        the diagonal line sums. Otherwise the resistive network is solved
+        through a cached LU factorization of its resistance matrix.
+        """
         iv = input_variable.lower()
         ov = output_variable.lower()
         td = (transfer_direction[0].lower(), transfer_direction[1].lower())
@@ -295,9 +384,34 @@ class CrossBar:
         output_variable: str = "voltage",
         xbar_orient: tuple | list = (("bottom", "left"), ("bottom", "right")),
     ) -> np.ndarray:
-        """Voltage divider between two cascade CrossBars.
+        """Voltage divider between two arrays sharing their rows.
 
-        Returns Tout, and optionally (TsA, TsB, TcA, Tpro, Tdir).
+        ``A`` is driven on its columns, while ``B``'s columns are grounded. The
+        result is ``Tout = Tdir + Tpro @ inv(TsA + TsB) @ TcA``. ``TcA`` is
+        ``A``'s column-to-row current transfer, ``TsA`` and ``TsB`` are the
+        row self transfers, and ``Tdir`` and ``Tpro`` depend on the requested
+        output. ``NaN`` entries are set to 0.
+
+        Parameters
+        ----------
+        A, B : CrossBar
+            Driven and grounded arrays, with the same number of rows.
+        output_node : {"middle", "first", "last"}, optional
+            Where the output is taken: at the shared row junctions
+            (``"middle"``, the default), at ``A``'s row ends (``"first"``) or
+            at ``B``'s row ends (``"last"``).
+        output_variable : {"voltage", "current"}, optional
+            Output quantity. Default ``"voltage"``.
+        xbar_orient : tuple or list, optional
+            One ``(column_end, row_end)`` pair for both arrays, or
+            ``[orient_A, orient_B]``. Default
+            ``[("bottom", "left"), ("bottom", "right")]``.
+
+        Returns
+        -------
+        ndarray
+            ``Tout``. :meth:`vpart_full` also returns the intermediate
+            matrices.
         """
         if isinstance(xbar_orient[0], str):
             xbar_orient = [xbar_orient, xbar_orient]
@@ -367,7 +481,7 @@ class CrossBar:
         output_variable: str = "voltage",
         xbar_orient: tuple | list = (("bottom", "left"), ("bottom", "right")),
     ) -> tuple:
-        """Like vpart but returns (Tout, TsA, TsB, TcA, Tpro, Tdir)."""
+        """Same as :meth:`vpart`, returning ``(Tout, TsA, TsB, TcA, Tpro, Tdir)``."""
         if isinstance(xbar_orient[0], str):
             xbar_orient = [xbar_orient, xbar_orient]
         xoA = tuple(xbar_orient[0])
@@ -471,9 +585,29 @@ class CrossBar:
     def to_spice(self, cb_id: str, bel, ted, ber=None, teu=None, ridx=None, cidx=None) -> list[str]:
         """SPICE netlist lines for the array.
 
-        ``bel``/``ber`` are row node lists (left/right); ``ted``/``teu`` are
-        column node lists (bottom/top). At least one of bel/ber and one of
-        ted/teu must be provided.
+        Parameters
+        ----------
+        cb_id : str
+            Prefix of cell and internal node names.
+        bel, ber : list of str
+            Row nodes at the left and right ends; at least one is required.
+        ted, teu : list of str
+            Column nodes at the bottom and top ends; at least one is required.
+        ridx, cidx : list of int, optional
+            Rows and columns to emit. Default: all.
+
+        Returns
+        -------
+        list of str
+            One line per non-empty cell, plus one buffer per column holding a
+            negative conductance when ``ideal_buffers`` is set. Arrays without
+            line resistance use plain resistors (``netlist_type ==
+            "reduced"``); the others use ``ArrayCell`` subcircuits.
+
+        Raises
+        ------
+        NotImplementedError
+            If a cell has non-zero capacitance.
         """
         if self.isempty():
             return []

@@ -329,16 +329,41 @@ def _sigprep(Ie, Ve, time: np.ndarray):
 
 
 def nlop_model(circ: LoopUS, Vin: np.ndarray, Iin: np.ndarray):
-    """Nonlinear operating-point solver. Returns (Vout, time=0, info)."""
+    """Analytical operating point with saturating op-amps.
+
+    Supply-limited op-amps may saturate at their rails. The saturation state
+    comes from solving ``Vout = clip(A * drive(Vout), Vss, Vdd)`` as a single
+    bounded least-squares problem. The linear sub-circuit of the unsaturated
+    op-amps is then solved exactly, and the state checked again. Ideal op-amps
+    (``A0 = inf``) are solved exactly rather than approximated by a large
+    gain.
+
+    Parameters
+    ----------
+    circ : LoopUS
+    Vin : ndarray, shape (p,) or None
+        Input-array column voltages [V].
+    Iin : ndarray, shape (n,)
+        Row input currents [A].
+
+    Returns
+    -------
+    Vout : ndarray, shape (n,)
+        Outputs of every op-amp [V].
+    time : float
+        Always 0.
+    info : dict
+        ``Vout``, ``sat_id`` (-1, 0 or +1 per op-amp) and ``Vcontrol``.
+    """
     S = circ.sign_vector
     A = S * np.array([float(np.atleast_1d(m.A0)[0]) for m in circ.oa_models])
     T = circ._transfer_core()
 
     Voffset = np.array([float(np.atleast_1d(getattr(m, "Vos", 0.0))[0]) for m in circ.oa_models])
-    oa_bias = circ.oa_reference.to_array(np.array([0.0]))[0]
-    in_bias = circ.input_reference.to_array(np.array([0.0]))[0]
+    oa_bias = float(circ.oa_reference.dcvalue)
+    in_bias = circ._input_bias()
 
-    vbiasn = in_bias if (in_bias != 0) else None
+    vbiasn = in_bias if np.any(in_bias != 0) else None
     vbiasp = S * Voffset + oa_bias
 
     vsupply = np.array([list(m.Vsupply) for m in circ.oa_models])
@@ -480,7 +505,31 @@ def nlop_model(circ: LoopUS, Vin: np.ndarray, Iin: np.ndarray):
 
 
 def nltran_model(circ: LoopUS, time: np.ndarray, Vin, Iin):
-    """Nonlinear transient solver. Returns (VGlobal, tGlobal)."""
+    """Analytical transient with saturating op-amps.
+
+    Piecewise-linear integration. While the saturation state and the inputs
+    are fixed, the unsaturated sub-circuit evolves in closed form through the
+    poles and eigenvectors of :meth:`LoopUS.pz <loopuss.LoopUS.pz>`. When an
+    op-amp changes region, the crossing time is refined iteratively, the
+    state updated and the evolution restarted from there.
+
+    Parameters
+    ----------
+    circ : LoopUS
+    time : ndarray, shape (T,)
+        Requested time points [s].
+    Vin : ndarray, shape (p, T) or None
+        Input-array column voltages sampled on ``time`` [V].
+    Iin : ndarray, shape (n, T) or None
+        Row input currents sampled on ``time`` [A].
+
+    Returns
+    -------
+    V : ndarray, shape (n, T')
+        Outputs of every op-amp [V].
+    t : ndarray, shape (T',)
+        Time points, including the added saturation events [s].
+    """
     T = circ._transfer_core()
 
     vsupply = np.array([list(m.Vsupply) for m in circ.oa_models])
@@ -492,10 +541,10 @@ def nltran_model(circ: LoopUS, time: np.ndarray, Vin, Iin):
     oa_mask = np.any(~np.isinf(vsupply), axis=1)
 
     Voffset = np.array([float(np.atleast_1d(getattr(m, "Vos", 0.0))[0]) for m in circ.oa_models])
-    oa_bias = circ.oa_reference.to_array(np.array([0.0]))[0]
-    in_bias = circ.input_reference.to_array(np.array([0.0]))[0]
+    oa_bias = float(circ.oa_reference.dcvalue)
+    in_bias = circ._input_bias()
 
-    vbiasn = in_bias if (in_bias != 0) else None
+    vbiasn = in_bias if np.any(in_bias != 0) else None
     vbiasp = S * Voffset + oa_bias
 
     all_linear = not np.any(oa_mask)
@@ -531,7 +580,7 @@ def nltran_model(circ: LoopUS, time: np.ndarray, Vin, Iin):
     t_valid = 0.0
     state_changed = True
     input_changed = True
-    inp_id = 0
+    inp_id = -1  # Loop advances inp_id before simulating new input segment
     c_iter = 0
 
     # Initial condition
@@ -564,7 +613,7 @@ def nltran_model(circ: LoopUS, time: np.ndarray, Vin, Iin):
 
         # STEP 2: linearise
         if state_changed:
-            poles_rad, W, l_eig, Xhat = circ.pz("rad", ~(sat_id != 0), True, True)
+            poles_rad, W, l_eig, Xhat = circ.pz("rad", ~(sat_id != 0), True)
             d = poles_rad / D0
 
             key = tuple(sat_id.tolist())

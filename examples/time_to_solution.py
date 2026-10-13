@@ -26,7 +26,7 @@ def main():
 
     Gin = CrossBar(np.empty((N, 0)))
     Gf = CrossBar(A * G0)
-    circ = LoopUS(Gin, Gf, verbose=True)
+    circ = LoopUS(Gin, Gf)
     circ.set_inputs(CurrentSignal.ytoi(rng.random(N), I0=I0))
 
     tts, tts_min, tts_max = circ.tts()

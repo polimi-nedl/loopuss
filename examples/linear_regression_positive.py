@@ -34,7 +34,6 @@ def main():
         oa_model=OAModel("1P"),
         sign_vector=S,
         output_mask=M + np.arange(N + 1),
-        verbose=True,
     )
 
     y = rng.random(M)

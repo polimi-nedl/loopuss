@@ -15,7 +15,8 @@
         "bug",
         "doc",
         "userTesting",
-        "tutorial"
+        "tutorial",
+        "test"
       ]
     },
     {
@@ -25,6 +26,10 @@
       "profile": "https://github.com/eumonti",
       "contributions": [
         "code",
+        "bug",
+        "doc",
+        "userTesting",
+        "tutorial",
         "test"
       ]
     },

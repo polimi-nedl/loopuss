@@ -36,7 +36,7 @@ def main():
     y0 = -1 + 2 * rng.random(M.shape[0])
     oa = OAModel("1P", Vsupply=[-1.0, 1.0])
 
-    circ = LoopUS(Gin, Gf, oa_model=oa, initial_condition=y0, verbose=True)
+    circ = LoopUS(Gin, Gf, oa_model=oa, initial_condition=y0)
 
     # PWL current pulse on all inputs, identical waveform per channel.
     yvec = -1 + 2 * rng.random(M.shape[0])

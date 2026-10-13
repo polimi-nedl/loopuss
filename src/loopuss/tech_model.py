@@ -10,9 +10,9 @@ _PRESETS: dict[str, dict] = {
     "PTM-MG-HP-20nm": dict(node=20e-9, Rswn=50, Rswp=50, Rsh=0, Wr=1, Vdd=0.90),
     "PTM-MG-LSTP-7nm": dict(node=7e-9, Rswn=50, Rswp=50, Rsh=0, Wr=1, Vdd=0.70),
     "PTM-MG-LSTP-10nm": dict(node=10e-9, Rswn=50, Rswp=50, Rsh=0, Wr=1, Vdd=0.75),
-    "PTM-MG-LTSP-14nm": dict(node=14e-9, Rswn=50, Rswp=50, Rsh=0, Wr=1, Vdd=0.80),
-    "PTM-MG-LTSP-16nm": dict(node=16e-9, Rswn=50, Rswp=50, Rsh=0, Wr=1, Vdd=0.85),
-    "PTM-MG-LTSP-20nm": dict(node=20e-9, Rswn=50, Rswp=50, Rsh=0, Wr=1, Vdd=0.90),
+    "PTM-MG-LSTP-14nm": dict(node=14e-9, Rswn=50, Rswp=50, Rsh=0, Wr=1, Vdd=0.80),
+    "PTM-MG-LSTP-16nm": dict(node=16e-9, Rswn=50, Rswp=50, Rsh=0, Wr=1, Vdd=0.85),
+    "PTM-MG-LSTP-20nm": dict(node=20e-9, Rswn=50, Rswp=50, Rsh=0, Wr=1, Vdd=0.90),
     "PTM-HP-16nm": dict(node=16e-9, Rswn=75, Rswp=70.0, Rsh=5, Wr=1, Vdd=0.70),
     "PTM-HP-22nm": dict(node=22e-9, Rswn=75, Rswp=72.5, Rsh=5, Wr=1, Vdd=0.80),
     "PTM-HP-32nm": dict(node=32e-9, Rswn=75, Rswp=75.0, Rsh=5, Wr=1, Vdd=0.90),
@@ -28,7 +28,36 @@ _MMP: dict[float, float] = {14e-9: 42e-9, 16e-9: 64e-9}
 
 
 class TechModel:
-    """Technology node characterisation."""
+    """Technology node model.
+
+    Sets the lithographic node used for area estimates and for rescaling
+    peripherals (see :class:`~loopuss.PeriphCirc`). The presets are PTM
+    process corners, listed in :doc:`/presets`.
+
+    Parameters
+    ----------
+    preset : str, optional
+        Preset name. An unknown name raises ``ValueError``. Default: a
+        custom 14 nm node.
+    **kwargs
+        Attribute overrides, matched by exact name and cast to float. Unknown
+        names are ignored.
+
+    Attributes
+    ----------
+    type : str
+        Preset name, or ``"Custom"``.
+    node : float
+        Lithographic node [m]. Default 14 nm.
+    Rswn, Rswp : float
+        Sheet resistance of n-well and p-well resistors [Ω/□]. Default 300.
+    Rsh : float
+        Diffusion sheet resistance [Ω/□]. Default 5. Not used by the models.
+    Wr : float
+        Resistor form factor. Default 1.
+    Vdd : float
+        Nominal supply voltage [V]. Default 0.8.
+    """
 
     def __init__(self, preset: str | None = None, **kwargs):
         self.type: str = "Custom"
@@ -40,12 +69,13 @@ class TechModel:
         self.Vdd: float = 0.8
 
         if preset is not None:
-            if preset in _PRESETS:
-                self.type = preset
-                for k, v in _PRESETS[preset].items():
-                    setattr(self, k, v)
-            else:
-                self.type = preset
+            if preset not in _PRESETS:
+                raise ValueError(
+                    f"Unknown TechModel preset {preset!r}. Available: {', '.join(_PRESETS)}."
+                )
+            self.type = preset
+            for k, v in _PRESETS[preset].items():
+                setattr(self, k, v)
 
         for k, v in kwargs.items():
             if hasattr(self, k):
@@ -53,18 +83,36 @@ class TechModel:
 
     @property
     def effective_node(self) -> float:
-        """Effective area node (accounts for sub-28 nm multi-patterning)."""
+        """Node used for area scaling [m].
+
+        The 14 nm and 16 nm nodes map to their minimum metal pitch (42 nm and
+        64 nm), because their cell area does not shrink with the nominal node.
+        Other nodes are returned unchanged.
+        """
         return _MMP.get(self.node, self.node)
 
     def resistor_size(self, R: float, rtype: str = "n") -> tuple[float, float, float]:
-        """Return (W, L, Area) for a resistance R [Ohm]. rtype: 'n' or 'p'."""
+        """Size a well resistor.
+
+        Parameters
+        ----------
+        R : float
+            Resistance [Ω].
+        rtype : {"n", "p"}, optional
+            Well type; any value other than ``"n"`` uses ``Rswp``. Default ``"n"``.
+
+        Returns
+        -------
+        W, L, area : float
+            Width (the node) and length [m], and area [m²].
+        """
         Rsw = self.Rswn if rtype == "n" else self.Rswp
         W = self.node
         L = R * self.Wr / Rsw * W
         return W, L, W * L
 
     def resistor_value(self, W: float, L: float, rtype: str = "n") -> float:
-        """Return resistance [Ohm] for width W and length L."""
+        """Resistance [Ω] of a well resistor of width ``W`` and length ``L`` [m]."""
         Rsw = self.Rswn if rtype == "n" else self.Rswp
         return Rsw * (L / W) / self.Wr
 

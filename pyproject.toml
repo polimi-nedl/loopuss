@@ -1,23 +1,71 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "loopuss"
-version = "1.0.0"
+version = "1.1.0"
 description = "loopuss: a simulation framework for open- and closed-loop in-memory computing circuits"
-requires-python = ">=3.9"
+readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    { name = "Piergiulio Mannocci" },
+    { name = "Eugenio Montinaro" },
+    { name = "Enrico Melacarne" },
+    { name = "Giuseppe Falcone" },
+    { name = "Andrea Pezzoli" },
+    { name = "Irene Andreoli" },
+    { name = "Carlo Zucchelli" },
+    { name = "Elisabetta Giannone" },
+    { name = "Daniele Ielmini" },
+]
+maintainers = [
+    { name = "Piergiulio Mannocci", email = "pier@unconv.ai" },
+    { name = "Eugenio Montinaro", email = "eugenio.montinaro@mail.polimi.it" },
+]
+keywords = [
+    "in-memory computing",
+    "analog computing",
+    "crossbar",
+    "resistive memory",
+    "circuit simulation",
+    "LTspice",
+    "benchmarking",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
     "numpy>=2.0",
     "scipy>=1.11",
     "matplotlib>=3.8",
 ]
 
+[project.urls]
+Homepage = "https://github.com/polimi-nedl/loopuss"
+Documentation = "https://loopuss.readthedocs.io"
+Repository = "https://github.com/polimi-nedl/loopuss"
+Issues = "https://github.com/polimi-nedl/loopuss/issues"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
     "pytest-cov",
     "ruff>=0.6",
+]
+docs = [
+    "sphinx>=8",
+    "furo",
+    "myst-parser>=4",
+    "sphinx-copybutton",
 ]
 
 [tool.setuptools.packages.find]
@@ -35,7 +83,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

@@ -47,15 +47,18 @@ def build_netlist(circ: LoopUS, solver_type: str, sp_analysis: _spice.SpiceAnaly
     Vjunc = [f"Vjunc_{i + 1}" for i in range(n)]
     VinOA = [f"VinOA_{i + 1}" for i in range(n)]
 
-    oa_ref_zero = circ.oa_reference.vtoy() == 0
-    in_ref_zero = circ.input_reference.vtoy() == 0
+    oa_ref_zero = circ.oa_reference.dcvalue == 0
+    in_ref_zero = [r.dcvalue == 0 for r in circ.input_reference]
     VrefOA = ["0" if oa_ref_zero else f"VrefOA_{i + 1}" for i in range(n)]
-    Vrefin = ["0" if in_ref_zero else f"Vrefin_{j + 1}" for j in range(p)]
+    Vrefin = ["0" if in_ref_zero[j] else f"Vrefin_{j + 1}" for j in range(p)]
 
-    Vin = []
-    for j in range(p):
-        loaded = j < len(circ.voltage_dac) and circ.voltage_dac[j].is_loaded()
-        Vin.append(f"Vin_{j + 1}" if loaded else "0")
+    # Only the DACs in the input masks drive the circuit, as in the model
+    # solver. A column whose DAC outputs nothing sits at its input reference;
+    # ground only when that reference is 0 V.
+    mask_v = {int(j) for j in circ.input_mask_v}
+    mask_i = {int(i) for i in circ.input_mask_i}
+    driven_v = [j in mask_v and circ.voltage_dac[j].is_loaded() for j in range(p)]
+    Vin = [f"Vin_{j + 1}" if driven_v[j] else Vrefin[j] for j in range(p)]
 
     VinOAp = list(VrefOA)
     if np.all(circ.feedback_array.line_resistance == 0):
@@ -67,15 +70,19 @@ def build_netlist(circ: LoopUS, solver_type: str, sp_analysis: _spice.SpiceAnaly
     if not oa_ref_zero:
         for i in range(n):
             comp.append(circ.oa_reference.to_spice(f"REFOA{i + 1}", VrefOA[i], "0"))
-    if not in_ref_zero:
-        for j in range(p):
-            comp.append(circ.input_reference.to_spice(f"REFIN{j + 1}", Vrefin[j], "0"))
+    for j in range(p):
+        if not in_ref_zero[j]:
+            comp.append(circ.input_reference[j].to_spice(f"REFIN{j + 1}", Vrefin[j], "0"))
 
     # --- input sources ---
+    # A .op holds the inputs at their t = 0 value, as the model solver does.
+    dc_only = sp_analysis.is_op()
     for j in range(p):
-        comp += circ.voltage_dac[j].to_spice(f"IN{j + 1}", (Vin[j], Vrefin[j]))
+        if driven_v[j]:
+            comp += circ.voltage_dac[j].to_spice(f"IN{j + 1}", (Vin[j], Vrefin[j]), dc_only=dc_only)
     for i in range(n):
-        comp += circ.current_dac[i].to_spice(f"IN{i + 1}", ("0", Vjunc[i]))
+        if i in mask_i:
+            comp += circ.current_dac[i].to_spice(f"IN{i + 1}", ("0", Vjunc[i]), dc_only=dc_only)
 
     # --- OA supplies ---
     supplies = sorted(
@@ -126,7 +133,7 @@ def build_netlist(circ: LoopUS, solver_type: str, sp_analysis: _spice.SpiceAnaly
     # --- analysis + save + footer ---
     if sp_analysis.is_tran() or sp_analysis.is_op():
         analysis = f"\r\n* SPICE Analysis\r\n{sp_analysis.to_spice()}\r\n"
-        save = ".save I(I*) V(Vin_*) V(VinOA_*) V(Vout_*) Ix(oa*) I(V*) V(Vjunc_*)\r\n"
+        save = ".save I(I*) V(Vin_*) V(VinOA_*) V(Vout_*) Ix(xoa*) I(V*) V(Vjunc_*)\r\n"
         if sp_analysis.is_tran() and circ.initial_condition is not None:
             ic = ".ic"
             for i, v in enumerate(np.asarray(circ.initial_condition).ravel()):
@@ -160,7 +167,7 @@ def build_netlist(circ: LoopUS, solver_type: str, sp_analysis: _spice.SpiceAnaly
     header = f"* {circ.file_path}//{circ.file_name}.asc\r\n"
 
     net_paths, raw_paths = [], []
-    for analysis, fid in zip(analyses, file_ids):
+    for analysis, fid in zip(analyses, file_ids, strict=True):
         net = out_dir / f"{circ.file_name}{fid}.net"
         raw = out_dir / f"{circ.file_name}{fid}.raw"
         net.write_text(header + comp_str + save_str + analysis + footer)

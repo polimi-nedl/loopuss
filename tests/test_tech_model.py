@@ -20,10 +20,9 @@ def test_preset_loading():
     assert t.Rswn == 50
 
 
-def test_unknown_preset_kept_as_type():
-    t = TechModel("MyFab")
-    assert t.type == "MyFab"
-    assert t.node == 14e-9  # defaults retained
+def test_unknown_preset_raises():
+    with pytest.raises(ValueError, match="MyFab"):
+        TechModel("MyFab")
 
 
 def test_kwargs_override():

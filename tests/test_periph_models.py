@@ -75,6 +75,13 @@ def test_oa_preset_values():
     assert np.any(np.isfinite(oa.Iout))
 
 
+def test_oa_preset_leakage_derived_from_supply():
+    # Presets store Isupply; leakage is derived as diff(Vsupply) * Isupply.
+    oa = OAModel("Sancandi21")
+    assert oa.Isupply == pytest.approx(456e-6)
+    assert oa.leakage_power == pytest.approx(1.2 * 456e-6)
+
+
 def test_oa_iout_scalar_becomes_symmetric():
     oa = OAModel("1P", Iout=3e-3)
     np.testing.assert_array_equal(oa.Iout, [-3e-3, 3e-3])
@@ -144,7 +151,7 @@ def test_dsp_eval_identity():
 
 
 def test_dsp_eval_custom_function_and_energy():
-    dsp = DSPModel(DSPFunction=lambda v: v * 2, complexity=10.0)
+    dsp = DSPModel(dsp_function=lambda v: v * 2, complexity=10.0)
     dsp.dynamic_energy = 1e-12
     dsp.latency = 1e-9
     y, T, Ed = dsp.eval(np.array([1.0, 2.0]))

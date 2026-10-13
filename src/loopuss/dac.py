@@ -141,7 +141,32 @@ _CDAC_PRESETS: dict[str, dict] = {
 
 
 class VoltageDAC(ConverterModel):
-    def __init__(self, preset_type: str = "ideal", *, Vref=None, signalWaveform=None, **kwargs):
+    """Voltage digital-to-analog converter model.
+
+    A :class:`~loopuss.LoopUS` holds one ``VoltageDAC`` per input-array
+    column. Each one outputs the :class:`~loopuss.VoltageSignal` waveforms
+    loaded with :meth:`load_waveform`, usually through
+    :meth:`LoopUS.set_inputs <loopuss.LoopUS.set_inputs>`, which also delays
+    them by ``latency``. See :doc:`/presets` for the literature presets.
+
+    Loaded waveforms are quantized to ``Nbit`` levels over ``Vref`` and clipped
+    to it, see :meth:`load_waveform`.
+
+    Parameters
+    ----------
+    preset_type : str, optional
+        Preset name. Default ``"ideal"``.
+    Vref : float or array_like of 2 floats, optional
+        Output range ``[lo, hi]`` [V]; a scalar ``v`` means ``[-v, v]``.
+        Default ``[-inf, inf]``.
+    signal_waveform : VoltageSignal or list of VoltageSignal, optional
+        Waveforms to load at construction, see :meth:`load_waveform`.
+    **kwargs
+        Forwarded to :class:`~loopuss.ConverterModel` and
+        :class:`~loopuss.PeriphCirc`.
+    """
+
+    def __init__(self, preset_type: str = "ideal", *, Vref=None, signal_waveform=None, **kwargs):
         self.Vref: np.ndarray = np.array([-np.inf, np.inf])
         self._waveforms: list[VoltageSignal] = []
         super().__init__(preset_type=preset_type, **kwargs)
@@ -150,12 +175,14 @@ class VoltageDAC(ConverterModel):
             v = np.asarray(Vref, dtype=float).ravel()
             self.Vref = np.array([-v[0], v[0]]) if v.size == 1 else v
 
-        if signalWaveform is not None:
-            self.load_waveform(signalWaveform)
+        if signal_waveform is not None:
+            self.load_waveform(signal_waveform)
 
     def _load_preset(self, preset_type: str) -> None:
-        if preset_type not in _VDAC_PRESETS:
+        if preset_type == "ideal":
             return
+        if preset_type not in _VDAC_PRESETS:
+            raise self._unknown_preset(preset_type, ["ideal", *_VDAC_PRESETS])
         p = _VDAC_PRESETS[preset_type]
         self.type = preset_type
         self.Nbit = float(p.get("Nbit", math.inf))
@@ -165,32 +192,46 @@ class VoltageDAC(ConverterModel):
         self.area = float(p.get("area", 0.0))
         self.technology = p.get("technology", TechModel())
         self.Vsupply = np.asarray(p.get("Vsupply", [-np.inf, np.inf]), dtype=float)
-        self.leakage_power = float(p.get("leakage_power", 0.0))
-        vspan = float(np.diff(self.Vsupply)[0])
-        self.Isupply = self.leakage_power / vspan if (np.isfinite(vspan) and vspan > 0) else 0.0
+        self._set_supply_from_power(float(p.get("leakage_power", 0.0)))
         vr = p.get("Vref", [-np.inf, np.inf])
         self.Vref = np.asarray(vr, dtype=float)
 
     def load_waveform(self, signals) -> None:
-        """Load signal waveforms, applying quantization."""
+        """Load the output waveforms, one per channel.
+
+        Replaces any previously loaded waveforms. Lists shorter than
+        ``Nchannel`` are padded with ``EMPTY`` signals. The DAC stores copies
+        whose STEP and PULSE levels, DC values and PWL values are quantized to
+        ``Nbit`` levels over ``Vref`` and clipped to it; SINE sources are
+        stored unchanged. An infinite end of ``Vref`` takes the extreme value
+        of the loaded waveforms.
+        """
         if isinstance(signals, VoltageSignal):
             signals = [signals]
-        self._waveforms = list(signals)
+        waveforms = list(signals)
         # Pad to Nchannel if needed
-        while len(self._waveforms) < self.Nchannel:
-            self._waveforms.append(VoltageSignal("EMPTY"))
+        while len(waveforms) < self.Nchannel:
+            waveforms.append(VoltageSignal("EMPTY"))
+        self._waveforms = self.quantclip(waveforms)
 
     def is_loaded(self) -> bool:
+        """True if at least one channel holds a non-``EMPTY`` waveform."""
         return bool(self._waveforms) and not all(
             w.stype.upper() == "EMPTY" for w in self._waveforms
         )
 
-    def todouble(
-        self, time: np.ndarray, extra_only: bool = False
-    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-        """Evaluate waveforms at time vector. Returns (n_ch, len(time)) array.
+    def todouble(self, time: np.ndarray) -> np.ndarray:
+        """Sample the loaded waveforms.
 
-        If extra_only=True, returns extra breakpoint times instead.
+        Parameters
+        ----------
+        time : array_like
+            Time points [s].
+
+        Returns
+        -------
+        ndarray, shape (channels, len(time))
+            Output voltages [V]; empty ``(0, len(time))`` if nothing is loaded.
         """
         t = np.asarray(time, dtype=float).ravel()
         if not self._waveforms:
@@ -203,22 +244,56 @@ class VoltageDAC(ConverterModel):
 
         Every breakpoint is returned, including those outside the requested
         time span, so that a source discontinuity at ``t = 0`` is honoured even
-        when the requested grid starts above it.
+        when the requested grid starts above it. ``time`` is unused.
         """
         if not self._waveforms:
             return np.array([])
         return np.concatenate([w.breakpoints() for w in self._waveforms])
 
-    def quantclip(self, x: np.ndarray) -> np.ndarray:
-        return self.quantclip_array(np.atleast_2d(x), self.Vref.reshape(1, 2))
+    def quantclip(self, x):
+        """Quantize and clip ``x``, an array or a list of signals, over ``Vref``;
+        see :meth:`~loopuss.ConverterModel.quantclip_array`."""
+        return self.quantclip_array(x, self.Vref.reshape(1, 2))
 
-    def to_spice(self, names, nodes) -> list[str]:
-        """SPICE source lines for the DAC channels."""
-        return _dac_to_spice(self._waveforms, names, nodes)
+    def to_spice(self, names, nodes, *, dc_only: bool = False) -> list[str]:
+        """SPICE source lines for the DAC channels.
+
+        ``names`` is one source id or one per channel; ``nodes`` is one
+        ``(pos, neg)`` pair or one per channel. ``EMPTY`` channels emit
+        nothing. ``dc_only`` writes each channel as a DC source at its t = 0
+        value, see :meth:`Signal.to_spice <loopuss.Signal.to_spice>`.
+        """
+        return _dac_to_spice(self._waveforms, names, nodes, dc_only)
 
 
 class CurrentDAC(ConverterModel):
-    def __init__(self, preset_type: str = "ideal", *, Iref=None, signalWaveform=None, **kwargs):
+    """Current digital-to-analog converter model.
+
+    A :class:`~loopuss.LoopUS` holds one ``CurrentDAC`` per row, injecting
+    current into the row junction. Each one outputs the
+    :class:`~loopuss.CurrentSignal` waveforms loaded with
+    :meth:`load_waveform`, usually through
+    :meth:`LoopUS.set_inputs <loopuss.LoopUS.set_inputs>`, which also delays
+    them by ``latency``. See :doc:`/presets` for the literature presets.
+
+    Loaded waveforms are quantized to ``Nbit`` levels over ``Iref`` and clipped
+    to it, see :meth:`load_waveform`.
+
+    Parameters
+    ----------
+    preset_type : str, optional
+        Preset name. Default ``"ideal"``.
+    Iref : float or array_like of 2 floats, optional
+        Output range ``[lo, hi]`` [A]; a scalar ``i`` means ``[-i, i]``.
+        Default ``[-inf, inf]``.
+    signal_waveform : CurrentSignal or list of CurrentSignal, optional
+        Waveforms to load at construction, see :meth:`load_waveform`.
+    **kwargs
+        Forwarded to :class:`~loopuss.ConverterModel` and
+        :class:`~loopuss.PeriphCirc`.
+    """
+
+    def __init__(self, preset_type: str = "ideal", *, Iref=None, signal_waveform=None, **kwargs):
         self.Iref: np.ndarray = np.array([-np.inf, np.inf])
         self._waveforms: list[CurrentSignal] = []
         super().__init__(preset_type=preset_type, **kwargs)
@@ -227,12 +302,14 @@ class CurrentDAC(ConverterModel):
             v = np.asarray(Iref, dtype=float).ravel()
             self.Iref = np.array([-v[0], v[0]]) if v.size == 1 else v
 
-        if signalWaveform is not None:
-            self.load_waveform(signalWaveform)
+        if signal_waveform is not None:
+            self.load_waveform(signal_waveform)
 
     def _load_preset(self, preset_type: str) -> None:
-        if preset_type not in _CDAC_PRESETS:
+        if preset_type == "ideal":
             return
+        if preset_type not in _CDAC_PRESETS:
+            raise self._unknown_preset(preset_type, ["ideal", *_CDAC_PRESETS])
         p = _CDAC_PRESETS[preset_type]
         self.type = preset_type
         self.Nbit = float(p.get("Nbit", math.inf))
@@ -242,25 +319,46 @@ class CurrentDAC(ConverterModel):
         self.area = float(p.get("area", 0.0))
         self.technology = p.get("technology", TechModel())
         self.Vsupply = np.asarray(p.get("Vsupply", [-np.inf, np.inf]), dtype=float)
-        self.leakage_power = float(p.get("leakage_power", 0.0))
-        vspan = float(np.diff(self.Vsupply)[0])
-        self.Isupply = self.leakage_power / vspan if (np.isfinite(vspan) and vspan > 0) else 0.0
+        self._set_supply_from_power(float(p.get("leakage_power", 0.0)))
         ir = p.get("Iref", [-np.inf, np.inf])
         self.Iref = np.asarray(ir, dtype=float)
 
     def load_waveform(self, signals) -> None:
+        """Load the output waveforms, one per channel.
+
+        Replaces any previously loaded waveforms. Lists shorter than
+        ``Nchannel`` are padded with ``EMPTY`` signals. The DAC stores copies
+        whose STEP and PULSE levels, DC values and PWL values are quantized to
+        ``Nbit`` levels over ``Iref`` and clipped to it; SINE sources are
+        stored unchanged. An infinite end of ``Iref`` takes the extreme value
+        of the loaded waveforms.
+        """
         if isinstance(signals, CurrentSignal):
             signals = [signals]
-        self._waveforms = list(signals)
-        while len(self._waveforms) < self.Nchannel:
-            self._waveforms.append(CurrentSignal("EMPTY"))
+        waveforms = list(signals)
+        while len(waveforms) < self.Nchannel:
+            waveforms.append(CurrentSignal("EMPTY"))
+        self._waveforms = self.quantclip(waveforms)
 
     def is_loaded(self) -> bool:
+        """True if at least one channel holds a non-``EMPTY`` waveform."""
         return bool(self._waveforms) and not all(
             w.stype.upper() == "EMPTY" for w in self._waveforms
         )
 
-    def todouble(self, time: np.ndarray, extra_only: bool = False) -> np.ndarray:
+    def todouble(self, time: np.ndarray) -> np.ndarray:
+        """Sample the loaded waveforms.
+
+        Parameters
+        ----------
+        time : array_like
+            Time points [s].
+
+        Returns
+        -------
+        ndarray, shape (channels, len(time))
+            Output currents [A]; empty ``(0, len(time))`` if nothing is loaded.
+        """
         t = np.asarray(time, dtype=float).ravel()
         if not self._waveforms:
             return np.empty((0, len(t)))
@@ -272,32 +370,41 @@ class CurrentDAC(ConverterModel):
 
         Every breakpoint is returned, including those outside the requested
         time span, so that a source discontinuity at ``t = 0`` is honoured even
-        when the requested grid starts above it.
+        when the requested grid starts above it. ``time`` is unused.
         """
         if not self._waveforms:
             return np.array([])
         return np.concatenate([w.breakpoints() for w in self._waveforms])
 
-    def quantclip(self, x: np.ndarray) -> np.ndarray:
-        return self.quantclip_array(np.atleast_2d(x), self.Iref.reshape(1, 2))
+    def quantclip(self, x):
+        """Quantize and clip ``x``, an array or a list of signals, over ``Iref``;
+        see :meth:`~loopuss.ConverterModel.quantclip_array`."""
+        return self.quantclip_array(x, self.Iref.reshape(1, 2))
 
-    def to_spice(self, names, nodes) -> list[str]:
-        """SPICE source lines for the DAC channels."""
-        return _dac_to_spice(self._waveforms, names, nodes)
+    def to_spice(self, names, nodes, *, dc_only: bool = False) -> list[str]:
+        """SPICE source lines for the DAC channels.
+
+        ``names`` is one source id or one per channel; ``nodes`` is one
+        ``(pos, neg)`` pair or one per channel. ``EMPTY`` channels emit
+        nothing. ``dc_only`` writes each channel as a DC source at its t = 0
+        value, see :meth:`Signal.to_spice <loopuss.Signal.to_spice>`.
+        """
+        return _dac_to_spice(self._waveforms, names, nodes, dc_only)
 
 
-def _dac_to_spice(waveforms, names, nodes) -> list[str]:
+def _dac_to_spice(waveforms, names, nodes, dc_only: bool = False) -> list[str]:
     """Emit SPICE source lines for a list of waveforms.
 
     ``names`` is a single id or one id per channel; ``nodes`` is a single
-    (pos, neg) pair (shared) or one pair per channel.
+    (pos, neg) pair (shared) or one pair per channel. ``dc_only`` is passed
+    to :meth:`Signal.to_spice`.
     """
     lines: list[str] = []
     per_channel_nodes = bool(nodes) and isinstance(nodes[0], (list, tuple))
     for i, w in enumerate(waveforms):
         name = names[i] if isinstance(names, (list, tuple)) else names
         pos, neg = nodes[i] if per_channel_nodes else nodes
-        s = w.to_spice(name, pos, neg)
+        s = w.to_spice(name, pos, neg, dc_only=dc_only)
         if s:
             lines.append(s)
     return lines

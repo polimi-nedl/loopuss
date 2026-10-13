@@ -23,7 +23,7 @@ from loopuss import CrossBar, CurrentSignal, LoopUS
 
 
 def _geq_ir(G, rr, rc):
-    """Analytical IR-drop equivalent conductance (mvm_ir_drop.m)."""
+    """Analytical IR-drop equivalent conductance."""
     M, N = G.shape
     Im, In = np.eye(M), np.eye(N)
     jm, jn = np.ones((M, 1)), np.ones((N, 1))
@@ -154,7 +154,7 @@ def _mna_coupling(G, rr, rc, sense):
             if j < n - 1:
                 chain.append(f"rb_{i}_{j}")
         chain.append(f"VinOA_{i}")
-        for a, b in zip(chain[:-1], chain[1:]):
+        for a, b in zip(chain[:-1], chain[1:], strict=True):
             res(a, b, rr / 2)
     for j in range(n):
         chain = [f"ctop_{j}"]
@@ -163,7 +163,7 @@ def _mna_coupling(G, rr, rc, sense):
             if i < m - 1:
                 chain.append(f"cb_{i}_{j}")
         chain.append(f"Vout_{j}")
-        for a, b in zip(chain[:-1], chain[1:]):
+        for a, b in zip(chain[:-1], chain[1:], strict=True):
             res(a, b, rc / 2)
     for i in range(m):
         for j in range(n):

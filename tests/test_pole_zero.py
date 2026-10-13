@@ -73,3 +73,31 @@ def test_pz_symmetric_not_pd(pz_data):
         rtol=1e-3,
         err_msg="Symmetric non-PD pole real-parts mismatch",
     )
+
+
+def test_pz_rejects_unknown_units():
+    circ = LoopUS(None, CrossBar(np.eye(3) * 1e-4))
+    with pytest.raises(ValueError):
+        circ.pz("rads")
+    # Units are case-insensitive, and "rad" is 2*pi times "hz".
+    p_hz, *_ = circ.pz("HZ")
+    p_rad, *_ = circ.pz("Rad")
+    np.testing.assert_allclose(p_rad, 2 * np.pi * p_hz)
+
+
+@pytest.mark.parametrize("topology", ["2P", "2P1Z"])
+def test_multi_pole_op_amps_rejected_by_model(topology):
+    circ = LoopUS(None, CrossBar(np.eye(3) * 1e-4), oa_model=OAModel(topology))
+    with pytest.raises(ValueError, match=topology):
+        circ.pz()
+    with pytest.raises(ValueError):
+        circ.tts()
+    with pytest.raises(ValueError):
+        circ.tran("model", 1e-6)
+
+
+@pytest.mark.parametrize("topology", ["1P", "GM"])
+def test_single_pole_op_amps_accepted(topology):
+    circ = LoopUS(None, CrossBar(np.eye(3) * 1e-4), oa_model=OAModel(topology))
+    poles, *_ = circ.pz()
+    assert poles.size == 3

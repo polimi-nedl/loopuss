@@ -19,7 +19,6 @@ _PRESETS: dict[str, dict] = {
         GBWP=40e3,
         Vsupply=np.array([0.0, 0.8]),
         Isupply=1.25e-6,
-        leakage_power=1e-6,
         area=104.46e-12,
         technology=TechModel(node=180e-9),
     ),
@@ -29,7 +28,6 @@ _PRESETS: dict[str, dict] = {
         GBWP=13.33e6,
         Vsupply=np.array([0.0, 1.8]),
         Isupply=71.974e-6,
-        leakage_power=130e-6,
         area=656e-12,
         technology=TechModel(node=180e-9),
     ),
@@ -39,7 +37,6 @@ _PRESETS: dict[str, dict] = {
         GBWP=22.85e6,
         Vsupply=np.array([0.0, 1.8]),
         Isupply=666.67e-6,
-        leakage_power=1.2e-3,
         area=104.46e-12,
         technology=TechModel(node=180e-9),
     ),
@@ -49,7 +46,6 @@ _PRESETS: dict[str, dict] = {
         GBWP=7.73e6,
         Vsupply=np.array([0.0, 1.5]),
         Isupply=93e-12,
-        leakage_power=0.14e-9,
         area=1.7365e-9,
         technology=TechModel(node=90e-9),
     ),
@@ -59,7 +55,6 @@ _PRESETS: dict[str, dict] = {
         GBWP=1.45e9,
         Vsupply=np.array([0.0, 1.5]),
         Isupply=149.87e-6,
-        leakage_power=224.8e-6,
         area=0.042e-6,
         technology=TechModel(node=90e-9),
     ),
@@ -69,7 +64,6 @@ _PRESETS: dict[str, dict] = {
         GBWP=2.37e6,
         Vsupply=np.array([-10.0, 10.0]),
         Isupply=2.55e-3,
-        leakage_power=51e-3,
         area=0.7e-6,
         technology=TechModel(node=20e-9),
     ),
@@ -79,7 +73,6 @@ _PRESETS: dict[str, dict] = {
         GBWP=14.9e6,
         Vsupply=np.array([-1.0, 1.0]),
         Isupply=455e-6,
-        leakage_power=910e-6,
         area=122.24e-12,
         technology=TechModel(node=90e-9),
     ),
@@ -89,7 +82,6 @@ _PRESETS: dict[str, dict] = {
         GBWP=530e6,
         Vsupply=np.array([-0.9, 0.9]),
         Isupply=2.4e-3,
-        leakage_power=4.3e-3,
         area=0.0138e-6,
         technology=TechModel(node=180e-9),
     ),
@@ -99,7 +91,6 @@ _PRESETS: dict[str, dict] = {
         GBWP=500e6,
         Vsupply=np.array([0.0, 0.8]),
         Isupply=15e-6,
-        leakage_power=12e-6,
         area=50e-12,
         technology=TechModel(node=14e-9),
     ),
@@ -109,7 +100,6 @@ _PRESETS: dict[str, dict] = {
         GBWP=20e6,
         Vsupply=np.array([0.0, 1.2]),
         Isupply=456e-6,
-        leakage_power=0.0,
         area=6292e-12,
         Vos=-96e-6,
         Rout=920.0,
@@ -120,7 +110,57 @@ _PRESETS: dict[str, dict] = {
 
 
 class OAModel(PeriphCirc):
-    """Operational amplifier model."""
+    """Operational amplifier model.
+
+    A gain stage with DC gain ``A0``, poles ``FP`` and zeros ``FZ`` sets the
+    frequency response. An output stage with rails ``Vsupply``, current limits
+    ``Iout`` and output resistance ``Rout`` models saturation. The analytical
+    solvers use ``A0``, the first pole, ``GBWP``, ``Vos`` and ``Vsupply``, so
+    the output-stage limits only take effect in SPICE, and multi-pole
+    topologies (``"2P"``, ``"2P1Z"``) are rejected by the analytical pole,
+    transient and noise solvers. There, each op-amp becomes the ``NonLinearOA`` subcircuit that
+    matches the non-idealities in use. See :doc:`/presets` for the literature
+    presets.
+
+    Parameters
+    ----------
+    preset_type : str, optional
+        Topology or preset name. The topologies are ``"1P"`` (single pole,
+        the default), ``"GM"`` (ideal integrator: ``A0 = inf`` and a pole at
+        0, characterized by ``GBWP``), ``"2P"`` (two poles) and ``"2P1Z"``
+        (two poles, one zero). All literature presets are single-pole. An
+        unknown name raises ``ValueError``.
+    A0 : float, optional
+        DC differential gain [V/V]. Default 1e4 (80 dB).
+    GBWP : float, optional
+        Gain-bandwidth product [Hz]. Default 100 MHz. It is replaced by
+        ``A0 * FP[0]`` when the two differ by more than 0.1 %.
+    FP : array_like, optional
+        Pole frequencies [Hz], sorted ascending. Default ``GBWP / A0``.
+    FZ : array_like, optional
+        Zero frequencies [Hz], sorted descending. Default: none.
+    Vos : float, optional
+        Input offset voltage [V]. Default 0.
+    Rout : float, optional
+        Output resistance [Ω]. Default 0.
+    Iout : float or array_like of 2 floats, optional
+        Negative and positive output current limits [A]; a scalar ``i`` means
+        ``[-i, i]``. Default unlimited.
+    input_capacitance : float, optional
+        Differential input capacitance [F]. Default 0. A non-zero value makes
+        :meth:`LoopUS.pz <loopuss.LoopUS.pz>` raise ``NotImplementedError``.
+    input_resistance : float, optional
+        Differential input resistance [Ω]. Default ``inf``.
+    noise_voltage : float, optional
+        Input voltage noise density [V/√Hz]. Default 0.
+    noise_current : float or array_like of 2 floats, optional
+        Current noise densities of the inverting and non-inverting inputs
+        [A/√Hz]; a scalar sets the inverting input only. Default 0.
+    **kwargs
+        Forwarded to :class:`~loopuss.PeriphCirc` (``Vsupply``,
+        ``technology``, ``area``, ...). Finite ``Vsupply`` rails make the
+        op-amp saturate.
+    """
 
     def __init__(
         self,
@@ -198,12 +238,14 @@ class OAModel(PeriphCirc):
 
     def _load_preset(self, preset_type: str) -> None:
         if preset_type not in _PRESETS:
-            return
+            raise self._unknown_preset(preset_type, _PRESETS)
         for k, v in _PRESETS[preset_type].items():
             if k == "type":
                 self.type = v
             elif hasattr(self, k):
                 setattr(self, k, v)
+        # Presets store Isupply. PeriphCirc.leakage_power derives
+        # the leakage from it and the rails.
 
     def _validate(self) -> None:
         """Validate/normalise the model. For GM force the ideal-integrator

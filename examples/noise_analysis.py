@@ -38,13 +38,12 @@ def main():
     Gf_noisy = CrossBar(A * G0, noiseless=False)
 
     # LoopUS objects: OA-noise only, memory-noise only, and both.
-    OAOnly = LoopUS(Gin, Gf, oa_model=OAModel("1P", GBWP=20e6, noise_voltage=2.9e-9), verbose=True)
-    MemoryOnly = LoopUS(Gin_noisy, Gf_noisy, verbose=True)
+    OAOnly = LoopUS(Gin, Gf, oa_model=OAModel("1P", GBWP=20e6, noise_voltage=2.9e-9))
+    MemoryOnly = LoopUS(Gin_noisy, Gf_noisy)
     MemoryAndOA = LoopUS(
         Gin_noisy,
         Gf_noisy,
         oa_model=OAModel("1P", noise_voltage=2.9e-9, noise_current=[14e-12, 3.2e-12]),
-        verbose=True,
     )
 
     # .noise sweep up to 100 GHz.

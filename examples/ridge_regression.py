@@ -29,7 +29,7 @@ def main():
     Gin = CrossBar(np.empty((L.shape[0], 0)))
     Gf = CrossBar(L * G0)
 
-    circ = LoopUS(Gin, Gf, sign_vector=S, output_mask=M + np.arange(N + 1), verbose=True)
+    circ = LoopUS(Gin, Gf, sign_vector=S, output_mask=M + np.arange(N + 1))
 
     y = rng.random(M)
     circ.set_inputs(CurrentSignal.ytoi(y, I0=I0))

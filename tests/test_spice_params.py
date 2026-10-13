@@ -51,9 +51,10 @@ def test_crossbar_reduced_netlist():
 def test_signal_to_spice_types():
     assert lp.VoltageSignal("DC", dcvalue=0.5).to_spice("1", "p", "n") == "V1 p n DC(0.5)"
     assert lp.VoltageSignal("EMPTY").to_spice("1", "p", "n") == ""
-    step = lp.VoltageSignal("STEP", v1=0.0, v2=0.3, td=0.0).to_spice("1", "p", "n")
-    # STEP carries explicit DC op value (post-step value) so that SPICE matches the model
-    assert step.startswith("V1 p n DC 0.3 PULSE(")
+    step_sig = lp.VoltageSignal("STEP", v1=0.0, v2=0.3, td=0.0)
+    assert step_sig.to_spice("1", "p", "n").startswith("V1 p n PULSE(")
+    # .op netlists hold every source at its t = 0 value, the post-step value here
+    assert step_sig.to_spice("1", "p", "n", dc_only=True) == "V1 p n DC(0.3)"
 
 
 def test_spice_analysis_to_double_noise():

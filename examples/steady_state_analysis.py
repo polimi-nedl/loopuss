@@ -23,7 +23,7 @@ def main():
     Gf = CrossBar(np.eye(N) * G0)
     Gin = CrossBar(A * G0)
 
-    circ = LoopUS(Gin, Gf, verbose=True)
+    circ = LoopUS(Gin, Gf)
 
     y = rng.random(N)
     circ.set_inputs(VoltageSignal.ytov(y, V0=V0, stype="DC"))

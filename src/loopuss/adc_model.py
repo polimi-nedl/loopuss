@@ -134,6 +134,29 @@ _PRESETS: dict[str, dict] = {
 
 
 class ADCModel(ConverterModel):
+    """Analog-to-digital converter model.
+
+    At the end of every :meth:`LoopUS.tran <loopuss.LoopUS.tran>`, the ADC
+    quantizes and clips the op-amp outputs selected by ``output_mask``. Its
+    latency, area, leakage and dynamic energy feed the benchmark. See
+    :doc:`/presets` for the literature presets.
+
+    Parameters
+    ----------
+    preset_type : str, optional
+        Preset name. Default ``"ideal"``: infinite resolution and no latency,
+        area or energy, so conversion leaves the signal unchanged.
+    Vref : float or array_like of 2 floats, optional
+        Full-scale range ``[lo, hi]`` [V]; a scalar ``v`` means ``[-v, v]``.
+        Presets do not set it. Default ``[-inf, inf]``: infinite ends are
+        replaced by the minimum and maximum of the converted signal.
+    **kwargs
+        Forwarded to :class:`~loopuss.ConverterModel` (``Nbit``,
+        ``Nchannel``, ``latency``) and :class:`~loopuss.PeriphCirc`
+        (``technology``, ``area``, ``dynamic_energy``, ``Vsupply``,
+        ``Isupply``, ``leakage_power``).
+    """
+
     def __init__(self, preset_type: str = "ideal", *, Vref=None, **kwargs):
         self.Vref: np.ndarray = np.array([-np.inf, np.inf])
         super().__init__(preset_type=preset_type, **kwargs)
@@ -142,8 +165,10 @@ class ADCModel(ConverterModel):
             self.Vref = np.array([-v[0], v[0]]) if v.size == 1 else v
 
     def _load_preset(self, preset_type: str) -> None:
-        if preset_type not in _PRESETS:
+        if preset_type == "ideal":
             return
+        if preset_type not in _PRESETS:
+            raise self._unknown_preset(preset_type, ["ideal", *_PRESETS])
         p = _PRESETS[preset_type]
         self.type = preset_type
         self.Nbit = float(p.get("Nbit", math.inf))
@@ -153,16 +178,32 @@ class ADCModel(ConverterModel):
         self.area = float(p.get("area", 0.0))
         self.technology = p.get("technology", TechModel())
         self.Vsupply = np.asarray(p.get("Vsupply", [-np.inf, np.inf]), dtype=float)
-        self.leakage_power = float(p.get("leakage_power", 0.0))
-        vspan = float(np.diff(self.Vsupply)[0])
-        self.Isupply = self.leakage_power / vspan if (np.isfinite(vspan) and vspan > 0) else 0.0
+        self._set_supply_from_power(float(p.get("leakage_power", 0.0)))
         self.Vref = np.array([-np.inf, np.inf])
 
     def quantclip(self, x: np.ndarray) -> np.ndarray:
+        """Quantize and clip ``x`` over ``Vref``, see
+        :meth:`~loopuss.ConverterModel.quantclip_array`."""
         return self.quantclip_array(np.atleast_2d(x), self.Vref.reshape(1, 2))
 
     def convert(self, x: np.ndarray) -> tuple[np.ndarray, float, float]:
-        """Quantize x; returns (y, latency, dynamic_energy)."""
+        """Convert a signal.
+
+        Parameters
+        ----------
+        x : array_like, shape (channels, samples)
+            Analog values [V].
+
+        Returns
+        -------
+        y : ndarray
+            Quantized and clipped values, same shape as ``x``.
+        latency : float
+            Conversion latency [s].
+        dynamic_energy : float
+            Energy of this call [J], added to the accumulator once per call
+            regardless of the number of samples.
+        """
         y = self.quantclip(x)
         self._energy["Dynamic"] += self.dynamic_energy
         return y, self.latency, self.dynamic_energy
